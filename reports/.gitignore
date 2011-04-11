@@ -1,0 +1,9 @@
+assignment*/assignment*.pdf
+assignment*/*.make
+assignment*/*.d
+assignment*/*.log
+assignment*/*.aux
+assignment*/*.swp
+assignment*/*.fls
+assignment*/*.temp
+assignment*/*.out

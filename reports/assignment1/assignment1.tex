@@ -1,0 +1,95 @@
+% This is "sig-alternate.tex" V1.9 April 2009
+% This file should be compiled with V2.4 of "sig-alternate.cls" April 2009
+%
+% This has been modified for use in the Principles of Computer System Design @
+% DIKU, 2010/2011
+\documentclass{../sig-alternate}
+%
+% This gets rid of the copyright box which is not needed for PCSD assignments
+%
+\makeatletter
+\def\@copyrightspace{}
+\makeatother
+%
+% For our purposes page numbers are not so bad
+%
+\pagenumbering{arabic}
+
+%
+% Useful packages
+%
+\usepackage{url}
+\usepackage[english]{babel}
+%\usepackage[british]{babel}
+\usepackage{hyperref}
+%\usepackage{graphicx} % uncomment if you are using graphics
+
+%
+% You can delete this pacakge once you start using the template
+%
+\usepackage{lipsum}
+
+\begin{document}
+
+\title{Datanet: Assignment 1}
+
+\numberofauthors{1} % This is individual work right???
+
+\author{
+% The command \alignauthor (no curly braces needed) should
+% precede each author name, affiliation/snail-mail address and
+% e-mail address. Additionally, tag each line of
+% affiliation/address with \affaddr, and tag the
+% e-mail address with \email.
+\alignauthor
+    Daniel Egeberg\\
+    \email{egeberg@diku.dk}
+}
+
+\maketitle
+
+\begin{abstract}
+
+%
+% Put your own text here and delete this comment and the \lipsum command
+%
+\lipsum[1]
+
+\end{abstract}
+
+%
+% Delete all the text between this comment and the next 
+% one, and add your own  text, sections, figures, tables, 
+% etc., here...
+%
+\section{Introduction}
+\lipsum
+\section{Background}
+\lipsum[6-9]
+\section{Body}
+\lipsum[10-14]
+\section{Conclusion}
+\lipsum[23-24]
+%
+% Delete all the text between this comment and the previous
+% one, and add your own text, sections, figures, tables, 
+% etc., here...
+%
+
+
+%\bibliographystyle{abbrv}
+%\bibliography{pcsd}  % pcsd.bib is the name of the Bibliography in this case
+% You must have a proper ".bib" file
+%  and remember to run:
+% latex bibtex latex latex
+%  or
+% pdflatex bibtexx pdflatex pdflatex
+% to resolve all references
+
+%APPENDICES are optional
+%\balancecolumns
+%\appendix
+%Appendix A
+%\section{Headings in Appendices}
+
+\end{document}
