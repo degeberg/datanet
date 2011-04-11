@@ -5,6 +5,7 @@ import os
 import os.path
 import sys
 import socket
+import signal
 
 from server import Server
 
@@ -78,7 +79,10 @@ def main():
         daemonize()
 
     server = Server(args.address, args.port)
-    server.serve(args.dir, WORKERS)
+    try:
+        server.serve(args.dir, WORKERS)
+    except KeyboardInterrupt:
+        server.stop()
 
 if __name__ == '__main__':
     main()

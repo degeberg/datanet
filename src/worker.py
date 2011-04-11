@@ -16,12 +16,13 @@ class Worker(threading.Thread):
                 continue
 
             req = http.parse_request(client.recv(1024).decode('utf-8'))
-            print(req)
+            req['root_dir'] = self.server.root_dir
 
-            client.send(http.create_response(200, headers={
-                    'Content-Type': 'text/plain; charset=utf-8',
-                },
-                body='Not done yet...'
-            ).encode('ascii'))
+            print("%s %s" % (req['method'], req['path']))
+
+            try:
+                http.handle_request(req, client)
+            except http.HTTPError as e:
+                http.serve_error(e.get_code(), client)
 
             client.close()
