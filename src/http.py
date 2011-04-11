@@ -3,6 +3,7 @@ import os
 import os.path
 import datetime
 import mimetypes
+import email.utils
 
 import template
 
@@ -110,6 +111,10 @@ def parse_request_uri(uri):
     }
 
 def create_response_header(code, headers):
+    headers['Server'] = 'DanielServer'
+    headers['Connection'] = 'close'
+    headers['Date'] = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
+
     res = 'HTTP/1.1 %d %s\r\n' % (code, CODES[code])
     res += ''.join(map(lambda x: "%s: %s\r\n" % x, headers.items()))+'\r\n'
     return res.encode('ascii')
@@ -150,8 +155,6 @@ def handle_request(req, client):
 
 def serve_string(code, string, client, headers={}):
     headers['Content-Length'] = len(string)
-    headers['Server'] = 'DanielServer'
-    headers['Connection'] = 'close'
 
     client.sendall(create_response_header(code, headers))
     client.sendall(string)
@@ -187,8 +190,6 @@ def serve_file(path, root_dir, client, headers={}):
     real_path = root_dir + path
 
     headers['Content-Length'] = os.path.getsize(real_path)
-    headers['Server'] = 'DanielServer'
-    headers['Connection'] = 'close'
 
     mime, _ = mimetypes.guess_type(real_path)
     if mime == None:
