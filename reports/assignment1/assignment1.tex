@@ -24,9 +24,6 @@
 \usepackage{hyperref}
 %\usepackage{graphicx} % uncomment if you are using graphics
 
-%
-% You can delete this pacakge once you start using the template
-%
 \usepackage{lipsum}
 
 \begin{document}
@@ -36,11 +33,6 @@
 \numberofauthors{1} % This is individual work right???
 
 \author{
-% The command \alignauthor (no curly braces needed) should
-% precede each author name, affiliation/snail-mail address and
-% e-mail address. Additionally, tag each line of
-% affiliation/address with \affaddr, and tag the
-% e-mail address with \email.
 \alignauthor
     Daniel Egeberg\\
     \email{egeberg@diku.dk}
@@ -49,32 +41,80 @@
 \maketitle
 
 \begin{abstract}
-
-%
-% Put your own text here and delete this comment and the \lipsum command
-%
-\lipsum[1]
-
+    \lipsum[1]
 \end{abstract}
 
-%
-% Delete all the text between this comment and the next 
-% one, and add your own  text, sections, figures, tables, 
-% etc., here...
-%
-\section{Introduction}
-\lipsum
-\section{Background}
-\lipsum[6-9]
-\section{Body}
+\section{Web server design}
+
+The web server has been implemented using Python 3.2. It will not run on
+earlier versions of Python 3.x due to the usage of the \verb+argparse+
+module. No libraries outside of the standard libraries provided by Python has
+been used in the implementation. No operating system specific functionality
+has been used, so it will likely run on all platforms capable of running
+Python 3.2, but it has only been tested on GNU/Linux.
+
+The web server consists of the following components:
+
+\begin{description}
+    \item[\texttt{main.py}] is the main entry point for running the web
+        server. It parses the arguments and starts the server, optionally as a
+        daemon.
+    \item[\texttt{Server}] is a class that creates a listening socket
+        and starts a pool of \texttt{Worker} threads. It also receives
+        incoming connections and places the clients in a client queue. The
+        size of the worker pool is 5 by default. These workers are reused
+        between connections to prevent the additional overhead from
+        continuously creating and killing new threads. If there is no
+        available worker for a client, it will be queued.
+    \item[\texttt{Worker}] is a class handles the individual client requests.
+        It gets the client sockets from the client queue that the
+        \texttt{Server} populates. It uses the functionality in the
+        \texttt{http} module to send an appropriate response to the client.
+    \item[\texttt{http}] is the module that contains the various logic for
+        parsing an HTTP request and generating HTTP responses.
+    \item[\texttt{template}] is a small module that supports rudimentary
+        templating support. This is used for things like error pages and
+        directory listings.
+\end{description}
+
+
+\section{Known limitations}
+
+The web server has a number of intentional limitations. The only supported
+requests methods are GET and HEAD. POST is supported by the web server, but
+is treated as identical to GET requests. All other request methods will
+result in a 501 Not Implemented response status code.
+
+The only supported HTTP version is 1.1. HTTP/1.0 requests will be met with
+a 505 HTTP Version Not Supported response code. This was chosen so it would
+not be necessary dealing with any discrepancies between versions 1.0 and 1.1
+there might exist.
+
+Persistens connections are not supported. This is indicated to clients by
+always returning a \verb+Connection: close+ header in the response.
+
+The accuracy of the \verb+Content-Type+ header depends on \verb+mimetypes+
+module in Python. This module's accuracy depends on the availability of
+suitable mapping files on the underlying system. If the \verb+mimetypes+
+module is unable to deduce a MIME type based on the file extension, no
+\verb+Content-Type+ header is returned. This was not seen as any major issue.
+
+If a worker thread crashes for whatever reason, it will not restart and a
+new worker will not be started. This means that if all workers crash,
+the web server process will still be running and accepting connections,
+but these will simply not be handled.
+
+
+\section{Test results}
 \lipsum[10-14]
-\section{Conclusion}
+
+
+\section{Supported headers}
 \lipsum[23-24]
-%
-% Delete all the text between this comment and the previous
-% one, and add your own text, sections, figures, tables, 
-% etc., here...
-%
+
+
+\section{Extensibility}
+\lipsum
 
 
 %\bibliographystyle{abbrv}
