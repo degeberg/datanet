@@ -24,5 +24,7 @@ class Worker(threading.Thread):
                 http.handle_request(req, client)
             except http.HTTPError as e:
                 http.serve_error(e.get_code(), client)
+            except socket.error:
+                pass # don't crash if client closes connection prematurely
 
             client.close()
