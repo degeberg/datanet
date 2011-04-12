@@ -5,6 +5,7 @@ import datetime
 import mimetypes
 import email.utils
 import hashlib
+import zlib
 
 import template
 
@@ -198,7 +199,7 @@ def get_etag(path):
 def serve_file(path, req, client, headers={}, headers_only=False):
     real_path = req['root_dir'] + path
 
-    headers['Content-Length'] = os.path.getsize(real_path)
+    headers['Content-Length'] = os.path.getsize(real_path) # TODO: Fix this when compressing...
     headers['Last-Modified'] = email.utils.formatdate(timeval=os.path.getmtime(real_path), localtime=False, usegmt=True)
     headers['ETag'] = get_etag(real_path)
 
@@ -207,6 +208,15 @@ def serve_file(path, req, client, headers={}, headers_only=False):
         mime = 'text/plain'
 
     headers['Content-Type'] = mime
+
+    if 'Accept-Encoding' in req['headers']:
+        aenc = req['headers']['Accept-Encoding'].split(', ')
+    else:
+        aenc = []
+
+    if 'deflate' in aenc:
+        headers['Content-Encoding'] = 'deflate'
+        comp = zlib.compressobj()
 
     if 'If-None-Match' in req['headers'] and req['headers']['If-None-Match'] == headers['ETag']:
         client.sendall(create_response_header(304, headers))
@@ -219,7 +229,14 @@ def serve_file(path, req, client, headers={}, headers_only=False):
                 while True:
                     s = f.read(1024)
                     if len(s) == 0: break
+
+                    if 'deflate' in aenc:
+                        s = comp.compress(s)
+
                     client.sendall(s)
+
+                if 'deflate' in aenc:
+                    client.sendall(comp.flush())
     except IOError:
         # file exists, but is unreadable. assume permission denied
         serve_error(403, client)
