@@ -3,7 +3,7 @@
 %
 % This has been modified for use in the Principles of Computer System Design @
 % DIKU, 2010/2011
-\documentclass{../sig-alternate}
+\documentclass{sig-alternate}
 %
 % This gets rid of the copyright box which is not needed for PCSD assignments
 %
@@ -24,8 +24,6 @@
 \usepackage{hyperref}
 %\usepackage{graphicx} % uncomment if you are using graphics
 
-\usepackage{lipsum}
-
 \begin{document}
 
 \title{Datanet: Assignment 1}
@@ -41,7 +39,7 @@
 \maketitle
 
 \begin{abstract}
-    \lipsum[1]
+    Some sort of abstract here\ldots
 \end{abstract}
 
 \section{Web server design}
@@ -62,7 +60,7 @@ The web server consists of the following components:
     \item[\texttt{Server}] is a class that creates a listening socket
         and starts a pool of \texttt{Worker} threads. It also receives
         incoming connections and places the clients in a client queue. The
-        size of the worker pool is 5 by default. These workers are reused
+        size of the worker pool is 20 by default. These workers are reused
         between connections to prevent the additional overhead from
         continuously creating and killing new threads. If there is no
         available worker for a client, it will be queued.
@@ -90,10 +88,12 @@ a 505 HTTP Version Not Supported response code. This was chosen so it would
 not be necessary dealing with any discrepancies between versions 1.0 and 1.1
 there might exist.
 
-Persistens connections are not supported. This is indicated to clients by
-always returning a \verb+Connection: close+ header in the response.
+Persistent connections are not supported. This is indicated to clients
+by always returning a \verb+Connection: close+ header in the response.
+Likewise are other ``advanced'' features such as chunked transfers and ranges
+unsupported as well.
 
-The accuracy of the \verb+Content-Type+ header depends on \verb+mimetypes+
+The accuracy of the \verb+Content-Type+ header depends on the \verb+mimetypes+
 module in Python. This module's accuracy depends on the availability of
 suitable mapping files on the underlying system. If the \verb+mimetypes+
 module is unable to deduce a MIME type based on the file extension, no
@@ -104,17 +104,29 @@ new worker will not be started. This means that if all workers crash,
 the web server process will still be running and accepting connections,
 but these will simply not be handled.
 
+The server's support for compressing the response entity body is limited to
+\verb+deflate+, but could be extended to support other compression methods as
+well if necessary.
+
 
 \section{Test results}
-\lipsum[10-14]
+
+The web server has been tested using \verb+telnet+ and using a web browser
+(specifically Firefox 4.0).
+
+Write something else. Include something about Apache Bench and
+performance\ldots
 
 
 \section{Supported headers}
-\lipsum[23-24]
+
+Bla bla bla\ldots lots of headers are supported.
 
 
 \section{Extensibility}
-\lipsum
+
+The server will be easy to extend for for future assignments because my code
+is awesome\ldots
 
 
 %\bibliographystyle{abbrv}
