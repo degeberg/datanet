@@ -6,6 +6,7 @@ import mimetypes
 import email.utils
 import hashlib
 import zlib
+import time
 
 import template
 
@@ -218,7 +219,14 @@ def serve_file(path, req, client, headers={}, headers_only=False):
         headers['Content-Encoding'] = 'deflate'
         comp = zlib.compressobj()
 
+    cached = False
+
     if 'If-None-Match' in req['headers'] and req['headers']['If-None-Match'] == headers['ETag']:
+        cached = True
+    if 'If-Modified-Since' in req['headers']:
+        cached = cached or time.mktime(email.utils.parsedate(req['headers']['If-Modified-Since'])) > os.path.getmtime(real_path)
+
+    if cached:
         client.sendall(create_response_header(304, headers))
         return
 
