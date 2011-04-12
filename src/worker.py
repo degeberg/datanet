@@ -4,6 +4,8 @@ import queue
 
 import http
 
+BUFSIZE=1024
+
 class Worker(threading.Thread):
     def __init__(self, server):
         self.server = server
@@ -15,7 +17,11 @@ class Worker(threading.Thread):
             if client == None:
                 continue
 
-            req = http.parse_request(client.recv(1024).decode('utf-8'))
+            buf = client.recv(BUFSIZE)
+            while buf != b'' and b'\r\n\r\n' not in buf:
+                buf += client.recv(BUFSIZE)
+
+            req = http.parse_request(buf.decode('utf-8'))
             req['root_dir'] = self.server.root_dir
 
             print("%s %s" % (req['method'], req['path']))
