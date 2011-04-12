@@ -117,6 +117,7 @@ def create_response_header(code, headers):
     headers['Server'] = 'DanielServer'
     headers['Connection'] = 'close'
     headers['Date'] = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
+    headers['Accept-Ranges'] = 'none'
 
     res = 'HTTP/1.1 %d %s\r\n' % (code, CODES[code])
     res += ''.join(map(lambda x: "%s: %s\r\n" % x, headers.items()))+'\r\n'
