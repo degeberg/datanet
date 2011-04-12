@@ -24,7 +24,7 @@ class Worker(threading.Thread):
             req = http.parse_request(buf.decode('utf-8'))
             req['root_dir'] = self.server.root_dir
 
-            print("%s %s" % (req['method'], req['path']))
+            print("Worker %s: %s %s" % (self.name.split('-')[1], req['method'], req['path']))
 
             try:
                 http.handle_request(req, client)
