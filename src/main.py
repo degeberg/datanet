@@ -11,7 +11,7 @@ from server import Server
 
 ERROR_LOG='/tmp/error.log'
 SERVER_LOG='/tmp/server.log'
-WORKERS=5
+WORKERS=20
 
 def daemonize():
     try:
