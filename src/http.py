@@ -4,6 +4,7 @@ import os.path
 import datetime
 import mimetypes
 import email.utils
+import hashlib
 
 import template
 
@@ -138,13 +139,13 @@ def handle_get_and_head(req, client):
         if real_path[-1] != '/':
             serve_redirect(uri['path'] + '/', client, headers_only)
         elif os.path.isfile(real_path + '/index.html'):
-            serve_file(uri['path'] + '/index.html', req['root_dir'], client, headers_only)
+            serve_file(uri['path'] + '/index.html', req['root_dir'], client, {}, headers_only)
         else:
             serve_directory_listing(uri['path'], req['root_dir'], client, headers_only)
     elif os.path.isfile(real_path):
-        serve_file(uri['path'], req['root_dir'], client, headers_only)
+        serve_file(uri['path'], req, client, {}, headers_only)
     else:
-        serve_error(404, client, headers_only)
+        serve_error(404, client, {}, headers_only)
 
 def handle_request(req, client):
     if req['method'] not in METHOD_HANDLERS:
@@ -191,10 +192,15 @@ def serve_directory_listing(path, root_dir, client, headers_only=False):
     serve_string(200, template.load_template('dir_listing.html', vars).encode('utf-8'), client,
                  {'Content-Type': 'text/html; charset=utf-8'}, headers_only)
 
-def serve_file(path, root_dir, client, headers={}, headers_only=False):
-    real_path = root_dir + path
+def get_etag(path):
+    return hashlib.md5(str(os.path.getmtime(path)).encode('ascii')).hexdigest()
+
+def serve_file(path, req, client, headers={}, headers_only=False):
+    real_path = req['root_dir'] + path
 
     headers['Content-Length'] = os.path.getsize(real_path)
+    headers['Last-Modified'] = email.utils.formatdate(timeval=os.path.getmtime(real_path), localtime=False, usegmt=True)
+    headers['ETag'] = get_etag(real_path)
 
     mime, _ = mimetypes.guess_type(real_path)
     if mime == None:
@@ -202,8 +208,12 @@ def serve_file(path, root_dir, client, headers={}, headers_only=False):
 
     headers['Content-Type'] = mime
 
+    if 'If-None-Match' in req['headers'] and req['headers']['If-None-Match'] == headers['ETag']:
+        client.sendall(create_response_header(304, headers))
+        return
+
     try:
-        with open(root_dir + path, 'rb') as f:
+        with open(real_path, 'rb') as f:
             client.sendall(create_response_header(200, headers))
             if not headers_only:
                 while True:
