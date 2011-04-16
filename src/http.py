@@ -6,9 +6,12 @@ import mimetypes
 import email.utils
 import hashlib
 import zlib
+import gzip
 import time
 
 import template
+
+COMPRESSION_LIMIT = 1048576 # 1 MB
 
 METHOD_HANDLERS = {}
 
@@ -201,7 +204,7 @@ def get_etag(path):
 def serve_file(path, req, client, headers={}, headers_only=False):
     real_path = req['root_dir'] + path
 
-    headers['Content-Length'] = os.path.getsize(real_path) # TODO: Fix this when compressing...
+    headers['Content-Length'] = os.path.getsize(real_path)
     headers['Last-Modified'] = email.utils.formatdate(timeval=os.path.getmtime(real_path), localtime=False, usegmt=True)
     headers['ETag'] = get_etag(real_path)
 
@@ -210,15 +213,6 @@ def serve_file(path, req, client, headers={}, headers_only=False):
         mime = 'text/plain'
 
     headers['Content-Type'] = mime
-
-    if 'Accept-Encoding' in req['headers']:
-        aenc = req['headers']['Accept-Encoding'].split(', ')
-    else:
-        aenc = []
-
-    if 'deflate' in aenc:
-        headers['Content-Encoding'] = 'deflate'
-        comp = zlib.compressobj()
 
     cached = False
 
@@ -231,21 +225,38 @@ def serve_file(path, req, client, headers={}, headers_only=False):
         client.sendall(create_response_header(304, headers))
         return
 
+    if 'Accept-Encoding' in req['headers']:
+        aenc = req['headers']['Accept-Encoding'].split(', ')
+    else:
+        aenc = []
+
     try:
+        comp = None
+        if headers['Content-Length'] <= COMPRESSION_LIMIT:
+            for t in aenc:
+                if t == 'deflate':
+                    headers['Content-Encoding'] = 'deflate'
+                    with open(real_path, 'rb') as f:
+                        comp = zlib.compress(f.read())
+                    headers['Content-Length'] = len(comp)
+                    break
+                elif t == 'gzip':
+                    headers['Content-Encoding'] = 'gzip'
+                    with open(real_path, 'rb') as f:
+                        comp = gzip.compress(f.read())
+                    headers['Content-Length'] = len(comp)
+                    pass
+
         with open(real_path, 'rb') as f:
             client.sendall(create_response_header(200, headers))
             if not headers_only:
-                while True:
-                    s = f.read(1024)
-                    if len(s) == 0: break
-
-                    if 'deflate' in aenc:
-                        s = comp.compress(s)
-
-                    client.sendall(s)
-
-                if 'deflate' in aenc:
-                    client.sendall(comp.flush())
+                if comp == None:
+                    while True:
+                        s = f.read(1024)
+                        if len(s) == 0: break
+                        client.sendall(s)
+                else:
+                    client.sendall(comp)
     except IOError:
         # file exists, but is unreadable. assume permission denied
         serve_error(403, client)
