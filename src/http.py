@@ -204,9 +204,10 @@ def get_etag(path):
 def serve_file(path, req, client, headers={}, headers_only=False):
     real_path = req['root_dir'] + path
 
-    headers['Content-Length'] = os.path.getsize(real_path)
     headers['Last-Modified'] = email.utils.formatdate(timeval=os.path.getmtime(real_path), localtime=False, usegmt=True)
     headers['ETag'] = get_etag(real_path)
+
+    filesize = os.path.getsize(real_path)
 
     mime, _ = mimetypes.guess_type(real_path)
     if mime == None:
@@ -231,26 +232,54 @@ def serve_file(path, req, client, headers={}, headers_only=False):
         aenc = []
 
     try:
+        aencq = {}
         comp = None
-        if headers['Content-Length'] <= COMPRESSION_LIMIT:
-            for t in aenc:
-                if t == 'deflate':
-                    headers['Content-Encoding'] = 'deflate'
-                    with open(real_path, 'rb') as f:
-                        comp = zlib.compress(f.read())
-                    headers['Content-Length'] = len(comp)
-                    break
-                elif t == 'gzip':
-                    headers['Content-Encoding'] = 'gzip'
-                    with open(real_path, 'rb') as f:
-                        comp = gzip.compress(f.read())
-                    headers['Content-Length'] = len(comp)
-                    pass
+        for t in aenc:
+            t = t.split(';q=')
+            if len(t) > 1:
+                aencq[t[0]] = float(t[1])
+            else:
+                aencq[t[0]] = 1.0
+
+        if '*' in aencq:
+            for x in ('identity', 'gzip', 'deflate'):
+                if x not in aencq:
+                    aencq[x] = aencq['*']
+            del aencq['*']
+
+        found = False
+        for t, q in sorted(aencq.items(), key=lambda x: x[1], reverse=True):
+            if q == 0: continue
+
+            if t == 'identity':
+                found = True
+                break
+            elif t == 'gzip':
+                headers['Content-Encoding'] = 'gzip'
+                with open(real_path, 'rb') as f:
+                    comp = gzip.compress(f.read())
+                headers['Content-Length'] = len(comp)
+                found = True
+                break
+            elif t == 'deflate':
+                headers['Content-Encoding'] = 'deflate'
+                with open(real_path, 'rb') as f:
+                    comp = zlib.compress(f.read())
+                headers['Content-Length'] = len(comp)
+                found = True
+                break
+
+        if not found and 'identity' in aencq or filesize > COMPRESSION_LIMIT and 'identity' in aencq and aencq['identity'] == 0:
+            if 'Content-Encoding' in headers: del headers['Content-Encoding']
+            if 'Content-Length' in headers: del headers['Content-Length']
+            client.sendall(create_response_header(406, headers))
+            return
 
         with open(real_path, 'rb') as f:
             client.sendall(create_response_header(200, headers))
             if not headers_only:
                 if comp == None:
+                    headers['Content-Length'] = filesize
                     while True:
                         s = f.read(1024)
                         if len(s) == 0: break
