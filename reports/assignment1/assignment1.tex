@@ -27,6 +27,7 @@
 \begin{document}
 
 \title{Datanet: Assignment 1}
+\subtitle{Web server}
 
 \numberofauthors{1} % This is individual work right???
 
@@ -105,8 +106,8 @@ the web server process will still be running and accepting connections,
 but these will simply not be handled.
 
 The server's support for compressing the response entity body is limited to
-\verb+deflate+, but could be extended to support other compression methods as
-well if necessary.
+\verb+deflate+, \verb+gzip+ and \verb+identity+, but could be extended to
+support other compression methods as well if necessary.
 
 
 \section{Test results}
