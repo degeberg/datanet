@@ -91,20 +91,21 @@ def parse_request(req):
     lines = req.split("\r\n")
     try:
         method, path, protocol = lines.pop(0).split(' ')
-    except Exception:
+
+        r = {
+            'method': method,
+            'path': path,
+            'protocol': protocol,
+            'headers': {}
+        }
+
+        for header in lines:
+            if header == '': continue
+            key, value = header.split(': ', 1)
+
+            r['headers'][key] = value
+    except:
         raise UserError(400)
-
-    r = {
-        'method': method,
-        'path': path,
-        'protocol': protocol,
-        'headers': {}
-    }
-
-    for header in lines:
-        if header == '': continue
-        key, value = header.split(': ', 1)
-        r['headers'][key] = value
 
     return r
 
