@@ -281,9 +281,10 @@ class Response:
             if not found and 'identity' in aencq or filesize > int(self.config['server']['compression_limit']) and 'identity' in aencq and aencq['identity'] == 0:
                 if 'Content-Encoding' in headers: del headers['Content-Encoding']
                 if 'Content-Length' in headers: del headers['Content-Length']
-                self.client.sendall(self.create_response_header(406, headers))
+                self.serve_error(406)
                 return
 
+            headers['Content-Length'] = os.path.getsize(real_path)
             with open(real_path, 'rb') as f:
                 self.client.sendall(self.create_response_header(200, headers))
                 if not headers_only:
