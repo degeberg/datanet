@@ -1,7 +1,7 @@
 import socket
 import threading
 import queue
-import sy
+import sys
 
 import http
 
