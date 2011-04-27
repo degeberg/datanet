@@ -1,12 +1,12 @@
 import string
+import os.path
 
-TEMPLATE_DIR='./templates/'
+class TemplateManager:
+    def __init__(self, template_dir):
+        self.template_dir = os.path.abspath(template_dir) + '/'
 
-def load_template(name, vars={}):
-    with open(TEMPLATE_DIR + name, 'r') as f:
-        tpl = f.read()
+    def load_template(self, name, vars={}):
+        with open(self.template_dir + name, 'r') as f:
+            tpl = f.read()
 
-    for var, value in vars.items():
-        tpl = tpl.replace('{{'+var+'}}', str(value))
-
-    return tpl
+        return string.Template(tpl).safe_substitute(vars)

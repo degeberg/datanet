@@ -115,15 +115,8 @@ def parse_request_uri(uri):
         'query': urllib.parse.parse_qs(res.query),
     }
 
-def create_response_header(code, headers):
-    headers['Server'] = 'DanielServer'
-    headers['Connection'] = 'close'
-    headers['Date'] = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
-    headers['Accept-Ranges'] = 'none'
-
-    res = 'HTTP/1.1 %d %s\r\n' % (code, CODES[code])
-    res += ''.join(map(lambda x: "%s: %s\r\n" % x, headers.items()))+'\r\n'
-    return res.encode('ascii')
+def get_etag(path):
+    return hashlib.md5(str(os.path.getmtime(path)).encode('ascii')).hexdigest()
 
 def register_method_handler(method):
     def decorator(f):
@@ -131,160 +124,177 @@ def register_method_handler(method):
         return f
     return decorator
 
-@register_method_handler('GET')
-@register_method_handler('HEAD')
-def handle_get_and_head(req, client):
-    uri = parse_request_uri(req['path'])
+class Response:
+    def __init__(self, config, client):
+        self.config = config
+        self.client = client
+        self.tpl = template.TemplateManager(config['resources']['templates'])
 
-    real_path = req['config']['server']['webroot'] + uri['path']
+    def create_response_header(self, code, headers):
+        headers['Server'] = 'DanielServer'
+        headers['Connection'] = 'close'
+        headers['Date'] = email.utils.formatdate(timeval=None, localtime=False, usegmt=True)
+        headers['Accept-Ranges'] = 'none'
 
-    headers_only = req['method'] == 'HEAD'
+        res = 'HTTP/1.1 %d %s\r\n' % (code, CODES[code])
+        res += ''.join(map(lambda x: "%s: %s\r\n" % x, headers.items()))+'\r\n'
+        return res.encode('ascii')
 
-    if os.path.isdir(real_path):
-        if real_path[-1] != '/':
-            serve_redirect(uri['path'] + '/', client, headers_only)
-        elif os.path.isfile(real_path + '/index.html'):
-            serve_file(uri['path'] + '/index.html', req['config']['server']['webroot'], client, {}, headers_only)
-        else:
-            serve_directory_listing(uri['path'], req['config']['server']['webroot'], client, headers_only)
-    elif os.path.isfile(real_path):
-        serve_file(uri['path'], req, client, {}, headers_only)
-    else:
-        serve_error(404, client, {}, headers_only)
+    @register_method_handler('GET')
+    @register_method_handler('HEAD')
+    def __handle_get_and_head(**kwargs):
+        self = kwargs['self']
+        self.req = kwargs['req']
+        uri = parse_request_uri(self.req['path'])
 
-def handle_request(req, client):
-    if req['method'] not in METHOD_HANDLERS:
-        raise ServerError(501)
+        real_path = self.config['server']['webroot'] + uri['path']
 
-    return METHOD_HANDLERS[req['method']](req, client)
+        headers_only = self.req['method'] == 'HEAD'
 
-def serve_string(code, string, client, headers={}, headers_only=False):
-    headers['Content-Length'] = len(string)
-
-    client.sendall(create_response_header(code, headers))
-    if not headers_only:
-        client.sendall(string)
-
-def serve_error(code, client, headers={}, headers_only=False):
-    headers['Content-Type'] = 'text/html; charset=utf-8'
-    body = template.load_template('error.html', {'CODE': code, 'MSG': CODES[code]}).encode('utf-8')
-    if not headers_only:
-        serve_string(code, body, client, headers)
-
-def serve_redirect(to, client, headers_only=False):
-    serve_error(301, client, {'Location': to}, headers_only)
-
-def serve_directory_listing(path, root_dir, client, headers_only=False):
-    vars = {
-        'PATH': path,
-        'FILES': '',
-    }
-
-    try:
-        for item in sorted(os.listdir(root_dir + path)):
-            real_path = root_dir + path + '/' + item
-
-            vars['FILES'] += template.load_template('dir_listing_entry.html', {
-                'URL': path + item,
-                'NAME': item,
-                'SIZE': os.path.getsize(real_path),
-                'MODTIME': datetime.datetime.fromtimestamp(os.path.getmtime(real_path)),
-            })
-    except OSError:
-        serve_error(403, client)
-        return
-
-    serve_string(200, template.load_template('dir_listing.html', vars).encode('utf-8'), client,
-                 {'Content-Type': 'text/html; charset=utf-8'}, headers_only)
-
-def get_etag(path):
-    return hashlib.md5(str(os.path.getmtime(path)).encode('ascii')).hexdigest()
-
-def serve_file(path, req, client, headers={}, headers_only=False):
-    real_path = req['config']['server']['webroot'] + path
-
-    headers['Last-Modified'] = email.utils.formatdate(timeval=os.path.getmtime(real_path), localtime=False, usegmt=True)
-    headers['ETag'] = get_etag(real_path)
-
-    filesize = os.path.getsize(real_path)
-
-    mime, _ = mimetypes.guess_type(real_path)
-    if mime == None:
-        mime = 'text/plain'
-
-    headers['Content-Type'] = mime
-
-    cached = False
-
-    if 'If-None-Match' in req['headers'] and req['headers']['If-None-Match'] == headers['ETag']:
-        cached = True
-    if 'If-Modified-Since' in req['headers']:
-        cached = cached or time.mktime(email.utils.parsedate(req['headers']['If-Modified-Since'])) > os.path.getmtime(real_path)
-
-    if cached:
-        client.sendall(create_response_header(304, headers))
-        return
-
-    if 'Accept-Encoding' in req['headers']:
-        aenc = req['headers']['Accept-Encoding'].split(', ')
-    else:
-        aenc = []
-
-    try:
-        aencq = {}
-        comp = None
-        for t in aenc:
-            t = t.split(';q=')
-            if len(t) > 1:
-                aencq[t[0]] = float(t[1])
+        if os.path.isdir(real_path):
+            if real_path[-1] != '/':
+                self.serve_redirect(uri['path'] + '/', client, headers_only)
+            elif os.path.isfile(real_path + '/index.html'):
+                self.serve_file(uri['path'] + '/index.html', {}, headers_only)
             else:
-                aencq[t[0]] = 1.0
+                self.serve_directory_listing(uri['path'], headers_only)
+        elif os.path.isfile(real_path):
+            self.serve_file(uri['path'], {}, headers_only)
+        else:
+            self.serve_error(404, {}, headers_only)
 
-        if '*' in aencq:
-            for x in ('identity', 'gzip', 'deflate'):
-                if x not in aencq:
-                    aencq[x] = aencq['*']
-            del aencq['*']
+    def handle_request(self, req):
+        if req['method'] not in METHOD_HANDLERS:
+            raise ServerError(501)
 
-        found = False
-        for t, q in sorted(aencq.items(), key=lambda x: x[1], reverse=True):
-            if q == 0: continue
+        return METHOD_HANDLERS[req['method']](self=self, req=req, client=self.client)
 
-            if t == 'identity':
-                found = True
-                break
-            elif t == 'gzip':
-                headers['Content-Encoding'] = 'gzip'
-                with open(real_path, 'rb') as f:
-                    comp = gzip.compress(f.read())
-                headers['Content-Length'] = len(comp)
-                found = True
-                break
-            elif t == 'deflate':
-                headers['Content-Encoding'] = 'deflate'
-                with open(real_path, 'rb') as f:
-                    comp = zlib.compress(f.read())
-                headers['Content-Length'] = len(comp)
-                found = True
-                break
+    def serve_string(self, code, string, headers={}, headers_only=False):
+        headers['Content-Length'] = len(string)
 
-        if not found and 'identity' in aencq or filesize > int(req['config']['server']['compression_limit']) and 'identity' in aencq and aencq['identity'] == 0:
-            if 'Content-Encoding' in headers: del headers['Content-Encoding']
-            if 'Content-Length' in headers: del headers['Content-Length']
-            client.sendall(create_response_header(406, headers))
+        self.client.sendall(self.create_response_header(code, headers))
+        if not headers_only:
+            self.client.sendall(string)
+
+    def serve_error(self, code, headers={}, headers_only=False):
+        headers['Content-Type'] = 'text/html; charset=utf-8'
+        body = self.tpl.load_template('error.html', {'CODE': code, 'MSG': CODES[code]}).encode('utf-8')
+        if not headers_only:
+            self.serve_string(code, body, headers)
+
+    def serve_redirect(self, to, headers_only=False):
+        self.serve_error(301, {'Location': to}, headers_only)
+
+    def serve_directory_listing(self, path, headers_only=False):
+        vars = {
+            'PATH': path,
+            'FILES': '',
+        }
+
+        webroot = self.config['server']['webroot']
+
+        try:
+            for item in sorted(os.listdir(webroot + path)):
+                real_path = webroot + path + '/' + item
+
+                vars['FILES'] += self.tpl.load_template('dir_listing_entry.html', {
+                    'URL': path + item,
+                    'NAME': item,
+                    'SIZE': os.path.getsize(real_path),
+                    'MODTIME': datetime.datetime.fromtimestamp(os.path.getmtime(real_path)),
+                })
+        except OSError:
+            serve_error(403)
             return
 
-        with open(real_path, 'rb') as f:
-            client.sendall(create_response_header(200, headers))
-            if not headers_only:
-                if comp == None:
-                    headers['Content-Length'] = filesize
-                    while True:
-                        s = f.read(1024)
-                        if len(s) == 0: break
-                        client.sendall(s)
+        self.serve_string(200, self.tpl.load_template('dir_listing.html', vars).encode('utf-8'),
+                     {'Content-Type': 'text/html; charset=utf-8'}, headers_only)
+
+    def serve_file(self, path, headers={}, headers_only=False):
+        real_path = self.config['server']['webroot'] + path
+
+        headers['Last-Modified'] = email.utils.formatdate(timeval=os.path.getmtime(real_path), localtime=False, usegmt=True)
+        headers['ETag'] = get_etag(real_path)
+
+        filesize = os.path.getsize(real_path)
+
+        mime, _ = mimetypes.guess_type(real_path)
+        if mime == None:
+            mime = 'text/plain'
+
+        headers['Content-Type'] = mime
+
+        cached = False
+
+        if 'If-None-Match' in self.req['headers'] and self.req['headers']['If-None-Match'] == headers['ETag']:
+            cached = True
+        if 'If-Modified-Since' in self.req['headers']:
+            cached = cached or time.mktime(email.utils.parsedate(self.req['headers']['If-Modified-Since'])) > os.path.getmtime(real_path)
+
+        if cached:
+            self.client.sendall(self.create_response_header(304, headers))
+            return
+
+        if 'Accept-Encoding' in self.req['headers']:
+            aenc = self.req['headers']['Accept-Encoding'].split(', ')
+        else:
+            aenc = []
+
+        try:
+            aencq = {}
+            comp = None
+            for t in aenc:
+                t = t.split(';q=')
+                if len(t) > 1:
+                    aencq[t[0]] = float(t[1])
                 else:
-                    client.sendall(comp)
-    except IOError:
-        # file exists, but is unreadable. assume permission denied
-        serve_error(403, client)
+                    aencq[t[0]] = 1.0
+
+            if '*' in aencq:
+                for x in ('identity', 'gzip', 'deflate'):
+                    if x not in aencq:
+                        aencq[x] = aencq['*']
+                del aencq['*']
+
+            found = False
+            for t, q in sorted(aencq.items(), key=lambda x: x[1], reverse=True):
+                if q == 0: continue
+
+                if t == 'identity':
+                    found = True
+                    break
+                elif t == 'gzip':
+                    headers['Content-Encoding'] = 'gzip'
+                    with open(real_path, 'rb') as f:
+                        comp = gzip.compress(f.read())
+                    headers['Content-Length'] = len(comp)
+                    found = True
+                    break
+                elif t == 'deflate':
+                    headers['Content-Encoding'] = 'deflate'
+                    with open(real_path, 'rb') as f:
+                        comp = zlib.compress(f.read())
+                    headers['Content-Length'] = len(comp)
+                    found = True
+                    break
+
+            if not found and 'identity' in aencq or filesize > int(self.config['server']['compression_limit']) and 'identity' in aencq and aencq['identity'] == 0:
+                if 'Content-Encoding' in headers: del headers['Content-Encoding']
+                if 'Content-Length' in headers: del headers['Content-Length']
+                self.client.sendall(self.create_response_header(406, headers))
+                return
+
+            with open(real_path, 'rb') as f:
+                self.client.sendall(self.create_response_header(200, headers))
+                if not headers_only:
+                    if comp == None:
+                        headers['Content-Length'] = filesize
+                        while True:
+                            s = f.read(1024)
+                            if len(s) == 0: break
+                            self.client.sendall(s)
+                    else:
+                        self.client.sendall(comp)
+        except IOError:
+            # file exists, but is unreadable. assume permission denied
+            self.serve_error(403)
