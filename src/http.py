@@ -183,7 +183,7 @@ def serve_directory_listing(path, root_dir, client, headers_only=False):
     }
 
     try:
-        for item in os.listdir(root_dir + path):
+        for item in sorted(os.listdir(root_dir + path)):
             real_path = root_dir + path + '/' + item
 
             vars['FILES'] += template.load_template('dir_listing_entry.html', {
