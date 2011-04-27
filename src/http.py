@@ -11,8 +11,6 @@ import time
 
 import template
 
-COMPRESSION_LIMIT = 1048576 # 1 MB
-
 METHOD_HANDLERS = {}
 
 CODES = {
@@ -138,7 +136,7 @@ def register_method_handler(method):
 def handle_get_and_head(req, client):
     uri = parse_request_uri(req['path'])
 
-    real_path = req['root_dir'] + uri['path']
+    real_path = req['config']['server']['webroot'] + uri['path']
 
     headers_only = req['method'] == 'HEAD'
 
@@ -146,9 +144,9 @@ def handle_get_and_head(req, client):
         if real_path[-1] != '/':
             serve_redirect(uri['path'] + '/', client, headers_only)
         elif os.path.isfile(real_path + '/index.html'):
-            serve_file(uri['path'] + '/index.html', req['root_dir'], client, {}, headers_only)
+            serve_file(uri['path'] + '/index.html', req['config']['server']['webroot'], client, {}, headers_only)
         else:
-            serve_directory_listing(uri['path'], req['root_dir'], client, headers_only)
+            serve_directory_listing(uri['path'], req['config']['server']['webroot'], client, headers_only)
     elif os.path.isfile(real_path):
         serve_file(uri['path'], req, client, {}, headers_only)
     else:
@@ -203,7 +201,7 @@ def get_etag(path):
     return hashlib.md5(str(os.path.getmtime(path)).encode('ascii')).hexdigest()
 
 def serve_file(path, req, client, headers={}, headers_only=False):
-    real_path = req['root_dir'] + path
+    real_path = req['config']['server']['webroot'] + path
 
     headers['Last-Modified'] = email.utils.formatdate(timeval=os.path.getmtime(real_path), localtime=False, usegmt=True)
     headers['ETag'] = get_etag(real_path)
@@ -270,7 +268,7 @@ def serve_file(path, req, client, headers={}, headers_only=False):
                 found = True
                 break
 
-        if not found and 'identity' in aencq or filesize > COMPRESSION_LIMIT and 'identity' in aencq and aencq['identity'] == 0:
+        if not found and 'identity' in aencq or filesize > int(req['config']['server']['compression_limit']) and 'identity' in aencq and aencq['identity'] == 0:
             if 'Content-Encoding' in headers: del headers['Content-Encoding']
             if 'Content-Length' in headers: del headers['Content-Length']
             client.sendall(create_response_header(406, headers))

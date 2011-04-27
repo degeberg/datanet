@@ -6,14 +6,27 @@ import os.path
 import sys
 import socket
 import signal
+import configparser
 
 from server import Server
 
-ERROR_LOG='/tmp/error.log'
-SERVER_LOG='/tmp/server.log'
-WORKERS=20
+CONFIG_DEFAULTS = {
+    # server:
+    'port': '80',
+    'bind': '0.0.0.0',
+    'webroot': '.',
+    'workers': '20',
+    'read_bufsize': '1024',
+    'compression_limit': '1048576',
+    'listen_backlog': '5',
+    # resources:
+    'templates': './templates',
+    # logs:
+    'error': '/tmp/error.log',
+    'server': '/tmp/server.log',
+}
 
-def daemonize():
+def daemonize(config):
     try:
         pid = os.fork()
         if pid > 0:
@@ -37,14 +50,15 @@ def daemonize():
     print('Server daemonized with pid %d.' % os.getpid())
 
     si = open('/dev/null', 'r')
-    so = open(SERVER_LOG, 'a+')
-    se = open(ERROR_LOG, 'a+')
+    so = open(config['logs']['server'], 'a+')
+    se = open(config['logs']['error'], 'a+')
     os.dup2(si.fileno(), sys.stdin.fileno())
     os.dup2(so.fileno(), sys.stdout.fileno())
     os.dup2(se.fileno(), sys.stderr.fileno())
 
 def parse_args():
     def ipv4_addr(addr):
+        if addr == None: return
         try:
             socket.inet_aton(addr)
             return addr
@@ -52,35 +66,57 @@ def parse_args():
             raise argparse.ArgumentTypeError('%s is not a valid IPv4 address' % addr)
 
     def path(p):
+        if p == None: return
         if os.path.exists(p):
             return os.path.abspath(p)
 
-        raise argparse.ArgumentTypeError("Directory '%s' does not exist" % p)
+        raise argparse.ArgumentTypeError("Path '%s' does not exist" % p)
 
     parser = argparse.ArgumentParser(description='Starts a web server.')
-    parser.add_argument('dir', default='.', type=path,
+    parser.add_argument('-w', '--webroot', type=path,
                         help='server root directory')
-    parser.add_argument('-p', '--port', default=80, type=int,
+    parser.add_argument('-p', '--port', type=int,
                         help='port the web server should bind to')
-    parser.add_argument('-a', '--address', default='0.0.0.0', type=ipv4_addr,
+    parser.add_argument('-a', '--address', type=ipv4_addr,
                         help='address the web server should bind to')
     parser.add_argument('-d', '--daemon', default=False, action='store_true',
                         help='daemonizes the server')
+    parser.add_argument('-c', '--config', default='config.ini', type=path,
+                        help='Path to configuration file.')
 
     return parser.parse_args()
 
+def parse_config(path, args):
+    config = configparser.ConfigParser(defaults=CONFIG_DEFAULTS)
+    config.read([path])
+
+    if args.webroot != None:
+        config['server']['webroot'] = args.webroot
+    if args.port != None:
+        config['server']['port'] = str(args.port)
+    if args.address != None:
+        config['server']['bind'] = args.address
+
+    config['server']['webroot'] = os.path.abspath(config['server']['webroot'])
+    config['resources']['templates'] = os.path.abspath(config['resources']['templates'])
+    config['logs']['error'] = os.path.abspath(config['logs']['error'])
+    config['logs']['server'] = os.path.abspath(config['logs']['server'])
+
+    return config
+
 def main():
     args = parse_args()
+    config = parse_config(args.config, args)
 
-    print('Starting server on %s:%s.' % (args.address, args.port))
-    print('Server root: %s' % args.dir)
+    print('Starting server on %s:%s.' % (config['server']['bind'], config['server']['port']))
+    print('Server root: %s' % config['server']['webroot'])
 
     if args.daemon:
-        daemonize()
+        daemonize(config)
 
-    server = Server(args.address, args.port)
+    server = Server(config)
     try:
-        server.serve(args.dir, WORKERS)
+        server.serve()
     except KeyboardInterrupt:
         server.stop()
 

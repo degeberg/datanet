@@ -4,8 +4,6 @@ import queue
 
 import http
 
-BUFSIZE=1024
-
 class Worker(threading.Thread):
     def __init__(self, server):
         self.server = server
@@ -17,13 +15,15 @@ class Worker(threading.Thread):
             if client == None:
                 continue
 
-            buf = client.recv(BUFSIZE)
+            bufsize = self.server.config['server'].getint('read_bufsize')
+
+            buf = client.recv(bufsize)
             while buf != b'' and b'\r\n\r\n' not in buf:
-                buf += client.recv(BUFSIZE)
+                buf += client.recv(bufsize)
 
             try:
                 req = http.parse_request(buf.decode('utf-8'))
-                req['root_dir'] = self.server.root_dir
+                req['config'] = self.server.config
 
                 print("Worker %s: %s %s" % (self.name.split('-')[1], req['method'], req['path']))
 
@@ -33,6 +33,6 @@ class Worker(threading.Thread):
             except socket.error:
                 pass # don't crash if client closes connection prematurely
             except:
-                http.serve_error(501, client) # something is fucked up...
+                http.serve_error(500, client)
 
             client.close()
