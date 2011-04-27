@@ -24,6 +24,29 @@
 \usepackage{hyperref}
 %\usepackage{graphicx} % uncomment if you are using graphics
 
+\usepackage{listings}
+\lstset{
+    keywordstyle=\bfseries\ttfamily\color[rgb]{0,0,1},
+    identifierstyle=\ttfamily,
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\ttfamily\color[rgb]{0.627,0.126,0.941},
+    showstringspaces=false,
+    basicstyle=\footnotesize,
+    numbersep=10pt,
+    tabsize=2,
+    breaklines=true,
+    prebreak = \raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+    breakatwhitespace=false,
+    aboveskip={1.5\baselineskip},
+    columns=fixed,
+    upquote=true,
+    extendedchars=true,
+    frame=single,
+    captionpos=b
+}
+
+\usepackage[margin=11pt,font=footnotesize,labelfont=bf]{caption}
+
 \begin{document}
 
 \title{Datanet: Assignment 1}
@@ -40,17 +63,24 @@
 \maketitle
 
 \begin{abstract}
-    Some sort of abstract here\ldots
+    This report outlines various design decisions in the implementation of
+    the web server, including known limitations with respect to RFC 2616
+    compliance and a list of the headers that are supported.
+
+    Additionally, the testing methods and results are accounted for as well as
+    results of benchmarking using Apache Bench.
+
+    Finally, it is described how the implementation will be able to
+    accommodate extension to support future assignments' required features.
 \end{abstract}
 
 \section{Web server design}
 
 The web server has been implemented using Python 3.2. It will not run on
-earlier versions of Python 3.x due to the usage of the \verb+argparse+
-module. No libraries outside of the standard libraries provided by Python has
-been used in the implementation. No operating system specific functionality
-has been used, so it will likely run on all platforms capable of running
-Python 3.2, but it has only been tested on GNU/Linux.
+earlier versions of Python 3.x. No libraries outside of the standard libraries
+provided by Python has been used in the implementation. No operating system
+specific functionality has been used, so it will likely run on all platforms
+capable of running Python 3.2, but it has only been tested on GNU/Linux.
 
 The web server consists of the following components:
 
@@ -70,14 +100,24 @@ The web server consists of the following components:
         \texttt{Server} populates. It uses the functionality in the
         \texttt{http} module to send an appropriate response to the client.
     \item[\texttt{http}] is the module that contains the various logic for
-        parsing an HTTP request and generating HTTP responses.
+        parsing an HTTP request and generating HTTP responses. The
+        \texttt{Response} object has various utility functions for generating
+        different kinds of responses (errors, serving files, directory
+        listings, etc.).
     \item[\texttt{template}] is a small module that supports rudimentary
         templating support. This is used for things like error pages and
         directory listings.
 \end{description}
 
+The web server has various settings that can be found in the configuration
+file (\verb+config.ini+ in the current directory by default, but can be set
+using the \verb+--config+ option). It will bind to 0.0.0.0:80 by default, so
+starting it requires superuser privileges unless the port is changed using the
+\verb+--port+ option or in the configuration file.
+
 
 \section{Known limitations}
+\label{sec:limitations}
 
 The web server has a number of intentional limitations. The only supported
 requests methods are GET and HEAD. POST is supported by the web server, but
@@ -115,20 +155,223 @@ support other compression methods as well if necessary.
 The web server has been tested using \verb+telnet+ and using a web browser
 (specifically Firefox 4.0).
 
-Write something else. Include something about Apache Bench and
-performance\ldots
+\autoref{lst:regular200} shows an HTTP request of the servers configuration
+file, \verb+config.ini+ and the generated response. \autoref{lst:etag} shows a
+request for the same file, but uses the \verb+If-None-Match+ header and the
+file's ETag.
+
+\lstset{caption={Serving a regular file.},label=lst:regular200}
+\begin{lstlisting}
+GET /config.ini HTTP/1.1
+Host: localhost
+
+HTTP/1.1 200 OK
+Content-Length: 207
+Accept-Ranges: none
+Server: DanielServer
+Last-Modified: Wed, 27 Apr 2011 08:20:49 GMT
+Connection: close
+ETag: fc42903e6b856f30aaf6fbac80def0c1
+Date: Wed, 27 Apr 2011 10:34:46 GMT
+Content-Type: text/plain
+
+[server]
+bind = 0.0.0.0
+port = 80
+webroot = .
+read_bufsize = 1024
+compression_limit = 1048576
+listen_backlog = 5
+
+[resources]
+templates = ./templates/
+
+[logs]
+error = /tmp/error.log
+server = /tmp/server.log
+\end{lstlisting}
+
+\lstset{caption={The ETag for \texttt{config.ini} matches, so a 304 Not Modified response is returned instead of the file.},label=lst:etag}
+\begin{lstlisting}
+GET /config.ini HTTP/1.1
+Host: localhost
+If-None-Match: fc42903e6b856f30aaf6fbac80def0c1
+
+HTTP/1.1 304 Not Modified
+Accept-Ranges: none
+Server: DanielServer
+Last-Modified: Wed, 27 Apr 2011 08:20:49 GMT
+Connection: close
+ETag: fc42903e6b856f30aaf6fbac80def0c1
+Date: Wed, 27 Apr 2011 10:35:15 GMT
+Content-Type: text/plain
+\end{lstlisting}
+
+\autoref{lst:notimplemented} shows how the server handles an unsupported HTTP
+DELETE request by returning a 501 Not Implemented response code. Additionally,
+it shows the templating system. All error pages use the same template as seen
+in \autoref{lst:notfound} where a non-existing resource is requested and a 404
+Not Found response code is returned to the client.
+
+\lstset{caption={Because HTTP DELETE is not supported, the server returns a 501 Not Implemented response code.},label=lst:notimplemented}
+\begin{lstlisting}
+DELETE /config.txt HTTP/1.1
+Host: localhost
+
+HTTP/1.1 501 Not Implemented
+Content-Length: 205
+Accept-Ranges: none
+Server: DanielServer
+Connection: close
+Date: Wed, 27 Apr 2011 10:36:57 GMT
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <title>501 Not Implemented</title>
+</head>
+<body>
+    <h1>501 Not Implemented</h1>
+</body>
+</html>
+\end{lstlisting}
+
+\lstset{caption={A correct 404 Not Found response code is returned if the requested resource does not exist.},label=lst:notfound}
+\begin{lstlisting}
+GET /does_not_exist.txt HTTP/1.1
+Host: localhost
+
+HTTP/1.1 404 Not Found
+Content-Length: 193
+Accept-Ranges: none
+Server: DanielServer
+Connection: close
+Date: Wed, 27 Apr 2011 10:38:08 GMT
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <title>404 Not Found</title>
+</head>
+<body>
+    <h1>404 Not Found</h1>
+</body>
+</html>
+\end{lstlisting}
+
+When a client requests content in encodings using the \verb+Accept-Encoding+
+header that the server is unable to provide, a 406 Not Acceptable response
+code is returned as in \autoref{lst:notacceptable}. If the server is able to
+provide the content in one of the, by the client, acceptable encodings, it
+will do as in \autoref{lst:gzip} where gzipped content is returned.
+
+\lstset{caption={A 406 Not Acceptable response code is returned because the server is unable to accomadate the requirements in the \texttt{Accept-Encoding} request header.},label=lst:notacceptable}
+\begin{lstlisting}
+HTTP/1.1 406 Not Acceptable
+Content-Length: 203
+Accept-Ranges: none
+Server: DanielServer
+Connection: close
+Date: Wed, 27 Apr 2011 10:57:40 GMT
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <title>406 Not Acceptable</title>
+</head>
+<body>
+    <h1>406 Not Acceptable</h1>
+</body>
+</html>
+\end{lstlisting}
+
+\lstset{caption={The server returns the compressed resource. Entity body is not shown.},label=lst:gzip}
+\begin{lstlisting}
+GET /http.py HTTP/1.1
+Host: localhost
+Accept-Encoding: gzip
+
+HTTP/1.1 200 OK
+Content-Length: 2790
+Content-Encoding: gzip
+Accept-Ranges: none
+Server: DanielServer
+Last-Modified: Wed, 27 Apr 2011 09:56:42 GMT
+Connection: close
+ETag: 9ca9ba76558be7744d4ff3aed141dbe6
+Date: Wed, 27 Apr 2011 10:40:04 GMT
+Content-Type: text/x-python
+
+**gzip compressed data**
+\end{lstlisting}
+
+Additionally, the server has been benchmarked using Apache
+Bench\footnote{\url{http://httpd.apache.org/docs/2.2/programs/ab.html}}.
+Benchmarking it by making 1000 requests to a 2 kB file with a concurrency
+level of 100 requests yielded a median response time of 7 ms, and the server
+was able to handle 332.06 requests per second. For some reason, the last
+few requests took 350--400 ms. I was unable to identify the source of this
+problem.
+
+For comparison, running the same benchmark on the same file and computer, but
+using nginx\footnote{\url{http://wiki.nginx.org/}} (a web server designed
+specifically for high-performance) gave a median response time of 8 ms,
+serving 10025.16 requests per minute with the longest response taking 17 ms.
+My own web server was able to deliver the file that fast in 80\% of the cases.
+Given the circumstances and the purpose of the implementation, I think it
+performs reasonably well.
 
 
 \section{Supported headers}
 
-Bla bla bla\ldots lots of headers are supported.
+The web server supports the following headers, subject to the limitations
+outlined in \autoref{sec:limitations}:
+
+\begin{itemize}
+    \item Response headers:
+    \begin{itemize}
+        \item Server
+        \item Connection
+        \item Date
+        \item Accept-Ranges
+        \item Content-Type
+        \item Location
+        \item Last-Modified
+        \item ETag
+        \item Content-Encoding
+        \item Content-Length
+    \end{itemize}
+    \item Request headers:
+    \begin{itemize}
+        \item If-None-Match
+        \item If-Modified-Since
+        \item Accept-Encoding
+    \end{itemize}
+\end{itemize}
 
 
 \section{Extensibility}
 
-The server will be easy to extend for for future assignments because my code
-is awesome\ldots
+Extending the web server to support additional features should not be a
+problem. Handling additional request methods can be done by applying the
+\verb+register_method_handler+ decorator in the \verb+http+ module. However,
+in order to support requests methods that require en entity body (e.g. POST),
+it is necessary to extend the \verb+Worker+ class so it also retrieves the
+body.
 
+All headers that are received by the client (whether they are recognized or
+not) are stored in a dictionary called \verb+req+ that the appropriate request
+handler gets. This means that the request handler can use the received headers
+it needs and act on them accordingly.
+
+These two design decisions combined should make it easier implementing
+features that are required in future assignments.
 
 %\bibliographystyle{abbrv}
 %\bibliography{pcsd}  % pcsd.bib is the name of the Bibliography in this case
