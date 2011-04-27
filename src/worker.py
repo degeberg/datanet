@@ -33,7 +33,8 @@ class Worker(threading.Thread):
                 response.serve_error(e.get_code())
             except socket.error:
                 pass # don't crash if client closes connection prematurely
-            except:
+            except Exception as e:
+                sys.stderr.write(str(e))
                 response.serve_error(500)
 
             client.close()
