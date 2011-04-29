@@ -153,7 +153,7 @@ class Response:
 
         if os.path.isdir(real_path):
             if real_path[-1] != '/':
-                self.serve_redirect(uri['path'] + '/', client, headers_only)
+                self.serve_redirect(uri['path'] + '/', headers_only)
             elif os.path.isfile(real_path + '/index.html'):
                 self.serve_file(uri['path'] + '/index.html', {}, headers_only)
             else:
