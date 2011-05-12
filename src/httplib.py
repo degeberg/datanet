@@ -209,7 +209,10 @@ class Response:
 
         bufsize = self.config['server'].getint('read_bufsize')
 
-        do_cache = cache.can_be_cached(res) and method == 'GET'
+        if method == 'GET':
+            do_cache, cache_expires = cache.can_be_cached(res)
+        else:
+            do_cache = False
 
         response_header = self.create_response_header(res.status, rheaders)
 
@@ -228,7 +231,7 @@ class Response:
 
         if do_cache:
             os.rename(tmpname, cachedir + '/' + res_id)
-            self.cache.add_resource(res_id, None) # TODO: Fix expires
+            self.cache.add_resource(res_id, cache_expires)
 
     def serve_string(self, code, string, headers={}, headers_only=False):
         headers['Content-Length'] = len(string)
