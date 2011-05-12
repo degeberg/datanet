@@ -1,4 +1,5 @@
 import urllib.parse
+import http.client
 import os
 import os.path
 import datetime
@@ -8,6 +9,7 @@ import hashlib
 import zlib
 import gzip
 import time
+import re
 
 import template
 
@@ -85,35 +87,39 @@ class UserError(HTTPError):
 class ServerError(HTTPError):
     pass
 
+def parse_headers(headers):
+    if type(headers) == str:
+        headers = headers.split("\r\n")
+
+    r = {}
+
+    for header in headers:
+        m = re.match('^(.+?):(?: (.*))?', header)
+        if not m: break
+        key, value = m.group(1, 2)
+        if value == None:
+            value = ''
+        r[key] = value
+
+    return r
+
 def parse_request(req):
     lines = req.split("\r\n")
     try:
-        method, path, protocol = lines.pop(0).split(' ')
+        method, uri, protocol = lines.pop(0).split(' ')
 
         r = {
             'method': method,
-            'path': path,
+            'uri': uri,
             'protocol': protocol,
             'headers': {}
         }
 
-        for header in lines:
-            if header == '': continue
-            key, value = header.split(': ', 1)
-
-            r['headers'][key] = value
+        r['headers'] = parse_headers(lines)
     except:
         raise UserError(400)
 
     return r
-
-def parse_request_uri(uri):
-    res = urllib.parse.urlparse(uri)
-    
-    return {
-        'path': res.path,
-        'query': urllib.parse.parse_qs(res.query),
-    }
 
 def get_etag(path):
     return hashlib.md5(str(os.path.getmtime(path)).encode('ascii')).hexdigest()
@@ -145,29 +151,72 @@ class Response:
     def __handle_get_and_head(**kwargs):
         self = kwargs['self']
         self.req = kwargs['req']
-        uri = parse_request_uri(self.req['path'])
 
-        real_path = self.config['server']['webroot'] + uri['path']
+        uridata = urllib.parse.urlparse(self.req['uri'])
 
         headers_only = self.req['method'] == 'HEAD'
 
-        if os.path.isdir(real_path):
-            if real_path[-1] != '/':
-                self.serve_redirect(uri['path'] + '/', headers_only)
-            elif os.path.isfile(real_path + '/index.html'):
-                self.serve_file(uri['path'] + '/index.html', {}, headers_only)
-            else:
-                self.serve_directory_listing(uri['path'], headers_only)
-        elif os.path.isfile(real_path):
-            self.serve_file(uri['path'], {}, headers_only)
+        if uridata.netloc != '':
+            self.serve_remote(headers_only)
         else:
-            self.serve_error(404, {}, headers_only)
+            real_path = self.config['server']['webroot'] + uridata.path
+
+            if os.path.isdir(real_path):
+                if real_path[-1] != '/':
+                    self.serve_redirect(uridata.path + '/', headers_only)
+                elif os.path.isfile(real_path + '/index.html'):
+                    self.serve_file(uridata.path + '/index.html', {}, headers_only)
+                else:
+                    self.serve_directory_listing(uridata.path, headers_only)
+            elif os.path.isfile(real_path):
+                self.serve_file(uridata.path, {}, headers_only)
+            else:
+                self.serve_error(404, {}, headers_only)
 
     def handle_request(self, req):
         if req['method'] not in METHOD_HANDLERS:
             raise ServerError(501)
 
         return METHOD_HANDLERS[req['method']](self=self, req=req, client=self.client)
+
+    def serve_remote(self, headers_only=False, body=None):
+        uridata = urllib.parse.urlparse(self.req['uri'])
+        conn = http.client.HTTPConnection(uridata.netloc)
+
+        method = 'HEAD' if headers_only else 'GET'
+
+        path = uridata.path
+        if uridata.query:
+            path += '?' + uridata.query
+
+        conn.request(method, path)
+        res = conn.getresponse()
+
+        headers = dict(res.getheaders())
+        headers['Transfer-Encoding'] = 'identity'
+
+        self.client.send(self.create_response_header(res.status, headers))
+
+        bufsize = self.config['server'].getint('read_bufsize')
+
+        buf = res.read(bufsize)
+        while buf:
+            self.client.send(buf)
+            # TODO: cache this
+            buf = res.read(bufsize)
+
+        return
+        request = urllib.request.Request(self.req['uri'], headers=self.req['headers'])
+
+        opener = urllib.request.build_opener(self.RedirectHandler)
+
+        try:
+            with opener.open(request) as r:
+                headers = parse_headers(str(r.info()).split('\n'))
+                self.client.send(self.create_response_header(200, headers))
+                self.client.send(r.read())
+        except urllib.error.HTTPError as e:
+            self.serve_error(e.code)
 
     def serve_string(self, code, string, headers={}, headers_only=False):
         headers['Content-Length'] = len(string)

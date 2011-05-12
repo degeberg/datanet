@@ -21,6 +21,7 @@ CONFIG_DEFAULTS = {
     'listen_backlog': '5',
     # resources:
     'templates': './templates',
+    'cache': './cache',
     # logs:
     'error': '/tmp/error.log',
     'server': '/tmp/server.log',
@@ -99,6 +100,7 @@ def parse_config(path, args):
 
     config['server']['webroot'] = os.path.abspath(config['server']['webroot'])
     config['resources']['templates'] = os.path.abspath(config['resources']['templates'])
+    config['resources']['cache'] = os.path.abspath(config['resources']['cache'])
     config['logs']['error'] = os.path.abspath(config['logs']['error'])
     config['logs']['server'] = os.path.abspath(config['logs']['server'])
 
