@@ -10,8 +10,10 @@ import zlib
 import gzip
 import time
 import re
+import tempfile
 
 import template
+import cache
 
 METHOD_HANDLERS = {}
 
@@ -131,9 +133,10 @@ def register_method_handler(method):
     return decorator
 
 class Response:
-    def __init__(self, config, client):
+    def __init__(self, config, client, cache):
         self.config = config
         self.client = client
+        self.cache = cache
         self.tpl = template.TemplateManager(config['resources']['templates'])
 
     def create_response_header(self, code, headers):
@@ -182,41 +185,50 @@ class Response:
     def serve_remote(self, headers_only=False, body=None):
         uridata = urllib.parse.urlparse(self.req['uri'])
         conn = http.client.HTTPConnection(uridata.netloc)
+        cachedir = self.config['resources']['cache']
+
+        res_id = cache.get_resource_id(self.req['uri'])
 
         method = 'HEAD' if headers_only else 'GET'
+
+        if self.cache.is_cached(res_id) and method == 'GET':
+            print('served something cached :D')
+            with open(cachedir + '/' + res_id, 'br') as f:
+                self.client.sendall(f.read())
+            return
 
         path = uridata.path
         if uridata.query:
             path += '?' + uridata.query
 
-        conn.request(method, path)
+        conn.request(method, path, body, self.req['headers'])
         res = conn.getresponse()
 
-        headers = dict(res.getheaders())
-        headers['Transfer-Encoding'] = 'identity'
-
-        self.client.send(self.create_response_header(res.status, headers))
+        rheaders = dict(res.getheaders())
+        rheaders['Transfer-Encoding'] = 'identity'
 
         bufsize = self.config['server'].getint('read_bufsize')
+
+        do_cache = cache.can_be_cached(res) and method == 'GET'
+
+        response_header = self.create_response_header(res.status, rheaders)
+
+        if do_cache:
+            tmpfd, tmpname = tempfile.mkstemp(dir=cachedir+'/tmp')
+            os.write(tmpfd, response_header)
+
+        self.client.sendall(response_header)
 
         buf = res.read(bufsize)
         while buf:
             self.client.send(buf)
-            # TODO: cache this
+            if do_cache:
+                os.write(tmpfd, buf)
             buf = res.read(bufsize)
 
-        return
-        request = urllib.request.Request(self.req['uri'], headers=self.req['headers'])
-
-        opener = urllib.request.build_opener(self.RedirectHandler)
-
-        try:
-            with opener.open(request) as r:
-                headers = parse_headers(str(r.info()).split('\n'))
-                self.client.send(self.create_response_header(200, headers))
-                self.client.send(r.read())
-        except urllib.error.HTTPError as e:
-            self.serve_error(e.code)
+        if do_cache:
+            os.rename(tmpname, cachedir + '/' + res_id)
+            self.cache.add_resource(res_id, None) # TODO: Fix expires
 
     def serve_string(self, code, string, headers={}, headers_only=False):
         headers['Content-Length'] = len(string)

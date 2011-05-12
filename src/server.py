@@ -5,11 +5,15 @@ import sys
 
 from worker import Worker
 
+import cache
+
 class Server:
     def __init__(self, config):
         self.config = config
 
         self.workers = []
+
+        self.cache = cache.Manager(config)
 
         self.clientqueue = queue.Queue(0) # create client queue of infinite size
 

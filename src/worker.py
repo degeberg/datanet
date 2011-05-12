@@ -22,7 +22,7 @@ class Worker(threading.Thread):
             while buf != b'' and b'\r\n\r\n' not in buf:
                 buf += client.recv(bufsize)
 
-            response = httplib.Response(self.server.config, client)
+            response = httplib.Response(self.server.config, client, self.server.cache)
 
             try:
                 req = httplib.parse_request(buf.decode('utf-8'))
