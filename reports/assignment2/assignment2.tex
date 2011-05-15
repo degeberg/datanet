@@ -65,8 +65,8 @@
 \begin{abstract}
     This report outlines the implementation of HTTP proxy server functionality
     in the previously developed HTTP server. First the implementation is
-    described, followed by an account of the caching strategy used, including
-    how concurrent connections are handled with respect to caching.
+    described, followed by a description of the caching strategy used,
+    including how concurrent connections are handled with respect to caching.
 
     Then follows a number of experiments measuring the performance of the
     proxy. It is seen that unless the proxy is used to download large files,
@@ -89,16 +89,17 @@ or not something should be cached is delegated to the new \verb+cache+
 module (see \autoref{sec:cachestrategy}). The \verb+cache+ module has a
 \verb+Manager+ object that is stored in the parent server thread. This object
 is shared between the various worker threads and is used to store cache
-metadata. The cache itself is stored on the file system. Each cached resource
-is given an identifier for use in the metadata cache and on the filesystem.
-This is currently implemented as the MD5 hash of the originating URI.
+metadata (retrieval date, expiry date, response headers). The cache itself is
+stored on the file system. Each cached resource is given an identifier for use
+in the metadata cache and on the filesystem. This is currently implemented as
+the MD5 hash of the originating URI.
 
 
 \section{Caching strategy}
 \label{sec:cachestrategy}
 
-The server implements support for a subset of the facilities provided
-in RFC~2616. The \verb+Expires+ header is fully supported. The
+The server implements support for a subset of the caching facilities
+provided in RFC~2616. The \verb+Expires+ header is fully supported. The
 \verb+Cache-Control+ response header is partially supported as it only checks
 the \verb+private+, \verb+no-cache+, \verb+no-store+ and \verb+max-age+
 values. If either of the first three values are present, the resource will
@@ -120,7 +121,7 @@ cache directory.
 Concurrent requests are handled by \emph{always} downloading a resource from
 the remote location unless the resource is marked as valid in the proxy's
 cache. When downloading the resource, it is downloaded into a temporary file
-in the cache directory with a random number. Only when the file is entirely
+in the cache directory with a random name. Only when the file is entirely
 downloaded will it be stored in the cache, and the file is moved to its proper
 location based on the generated resource id.
 
@@ -203,6 +204,11 @@ already in the proxy cache. Thus, for this proxy server there is only a
 speed advantage for the \emph{end user} when the requested resource is large
 and there is a significant disparity between the download speed from the
 resource's location and the download speed from the proxy's location.
+
+It is unknown where this speed penalty comes from. Finding the bottleneck
+would require profiling of the proxy as well as the \verb+http.client+ library
+in Python, which is used to make requests to remote servers. It is, however,
+unlikely that the problem is in this library.
 
 
 \section{Known limitations and bugs}
