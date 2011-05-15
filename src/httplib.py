@@ -190,18 +190,23 @@ class Response:
         res_id = cache.get_resource_id(self.req['uri'])
 
         method = 'HEAD' if headers_only else 'GET'
+        headers= self.req['headers']
 
         if self.cache.is_cached(res_id) and method == 'GET':
-            print('served something cached :D')
-            with open(cachedir + '/' + res_id, 'br') as f:
-                self.client.sendall(f.read())
+            self.cache.serve_resource(res_id, self)
             return
 
         path = uridata.path
         if uridata.query:
             path += '?' + uridata.query
 
-        conn.request(method, path, body, self.req['headers'])
+        try: # stupid browser cache...
+            del headers['If-None-Match']
+            del headers['If-Modified-Since']
+        except:
+            pass
+
+        conn.request(method, path, body, headers)
         res = conn.getresponse()
 
         rheaders = dict(res.getheaders())
@@ -214,11 +219,15 @@ class Response:
         else:
             do_cache = False
 
+        if 'Via' not in rheaders:
+            rheaders['Via'] = '1.1 DanielServer'
+        else:
+            rheaders['Via'] += ', 1.1 DanielServer'
+
         response_header = self.create_response_header(res.status, rheaders)
 
         if do_cache:
             tmpfd, tmpname = tempfile.mkstemp(dir=cachedir+'/tmp')
-            os.write(tmpfd, response_header)
 
         self.client.sendall(response_header)
 
@@ -230,8 +239,9 @@ class Response:
             buf = res.read(bufsize)
 
         if do_cache:
+            os.close(tmpfd)
             os.rename(tmpname, cachedir + '/' + res_id)
-            self.cache.add_resource(res_id, cache_expires)
+            self.cache.add_resource(res_id, cache_expires, rheaders)
 
     def serve_string(self, code, string, headers={}, headers_only=False):
         headers['Content-Length'] = len(string)
