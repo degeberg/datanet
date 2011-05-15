@@ -1,0 +1,240 @@
+% This is "sig-alternate.tex" V1.9 April 2009
+% This file should be compiled with V2.4 of "sig-alternate.cls" April 2009
+%
+% This has been modified for use in the Principles of Computer System Design @
+% DIKU, 2010/2011
+\documentclass{sig-alternate}
+%
+% This gets rid of the copyright box which is not needed for PCSD assignments
+%
+\makeatletter
+\def\@copyrightspace{}
+\makeatother
+%
+% For our purposes page numbers are not so bad
+%
+\pagenumbering{arabic}
+
+%
+% Useful packages
+%
+\usepackage{url}
+\usepackage[english]{babel}
+%\usepackage[british]{babel}
+\usepackage{hyperref}
+%\usepackage{graphicx} % uncomment if you are using graphics
+
+\usepackage{listings}
+\lstset{
+    keywordstyle=\bfseries\ttfamily\color[rgb]{0,0,1},
+    identifierstyle=\ttfamily,
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\ttfamily\color[rgb]{0.627,0.126,0.941},
+    showstringspaces=false,
+    basicstyle=\footnotesize,
+    numbersep=10pt,
+    tabsize=2,
+    breaklines=true,
+    prebreak = \raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+    breakatwhitespace=false,
+    aboveskip={1.5\baselineskip},
+    columns=fixed,
+    upquote=true,
+    extendedchars=true,
+    frame=single,
+    captionpos=b
+}
+
+\usepackage[margin=11pt,font=footnotesize,labelfont=bf]{caption}
+
+\begin{document}
+
+\title{Datanet: Assignment 2}
+\subtitle{HTTP Proxy Server}
+
+\numberofauthors{1} % This is individual work right???
+
+\author{
+\alignauthor
+    Daniel Egeberg\\
+    \email{egeberg@diku.dk}
+}
+
+\maketitle
+
+\begin{abstract}
+    This report outlines the implementation of HTTP proxy server functionality
+    in the previously developed HTTP server. First the implementation is
+    described, followed by an account of the caching strategy used, including
+    how concurrent connections are handled with respect to caching.
+
+    Then follows a number of experiments measuring the performance of the
+    proxy. It is seen that unless the proxy is used to download large files,
+    and the files are in cache, there is a speed penalty when using the proxy.
+
+    Finally, the server's limitations are accounted for.
+\end{abstract}
+
+\section{Proxy implementation}
+\label{sec:implementation}
+
+Most of the proxy implementation has been handled by extending the
+\verb+httplib+ module (called \verb+http+ in the previous version). Python's
+\verb+urllib.parse+ module is used to parse the request URI. If the
+\verb+netloc+ part is non-empty, it is considered a proxy request.
+
+Proxy requests are handled by the new \verb+serve_remote+ function, which
+makes the request to the remote server and handles caching. Checking whether
+or not something should be cached is delegated to the new \verb+cache+
+module (see \autoref{sec:cachestrategy}). The \verb+cache+ module has a
+\verb+Manager+ object that is stored in the parent server thread. This object
+is shared between the various worker threads and is used to store cache
+metadata. The cache itself is stored on the file system. Each cached resource
+is given an identifier for use in the metadata cache and on the filesystem.
+This is currently implemented as the MD5 hash of the originating URI.
+
+
+\section{Caching strategy}
+\label{sec:cachestrategy}
+
+The server implements support for a subset of the facilities provided
+in RFC~2616. The \verb+Expires+ header is fully supported. The
+\verb+Cache-Control+ response header is partially supported as it only checks
+the \verb+private+, \verb+no-cache+, \verb+no-store+ and \verb+max-age+
+values. If either of the first three values are present, the resource will
+not be cached. If the last value is present, the resource will be cached and
+considered valid for the specified duration. The remaining possible values
+are ignored, as is the \verb+Cache-Control+ header in a request context. The
+\verb+Cache-Control+ header takes higher precedence than the \verb+Expires+
+header.
+
+When a client requests a resource that is valid in the proxy's cache the
+\verb+If-Modified-Since+ and \verb+If-None-Match+ request headers are used to
+check if the client should receive a 304 Not Modified or 200 OK response code.
+In the case of a 200 OK, the resource is loaded from the disk in the proxy's
+cache directory.
+
+\subsection{Concurrency}
+\label{sec:concurrency}
+
+Concurrent requests are handled by \emph{always} downloading a resource from
+the remote location unless the resource is marked as valid in the proxy's
+cache. When downloading the resource, it is downloaded into a temporary file
+in the cache directory with a random number. Only when the file is entirely
+downloaded will it be stored in the cache, and the file is moved to its proper
+location based on the generated resource id.
+
+This strategy means that if two clients request the same uncached resource
+simultaneously, the copy stored in the cache will be the one that has most
+recently finished downloading. This, however, means that it will be downloaded
+multiple times and bandwidth is thus ``wasted''.
+
+
+\section{Experiments}
+\label{sec:experiments}
+
+To test the performance, we setup two test scenarios and measure the response
+time with and without the proxy.
+
+\subsection{Websites}
+\label{sec:websites}
+
+In the first test we use a browser to make requests to
+\url{http://slashdot.org} and \url{http://www.reddit.com}, which both contain
+references to many resources such as images, CSS, Javascript, etc. We test
+both with the browser's cache and the proxy's cache, and both with a primed
+and unprimed cache. \autoref{tbl:websites} shows the results of this.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|l|l|l||r|}
+        \hline
+        \bf{Website} & \bf{Cache} & \bf{Cached} & \bf{Response time} \\
+        \hline
+        \hline
+        \texttt{slashdot.org} & Browser & No & 4.18s \\ \hline
+        \texttt{slashdot.org} & Browser & Yes & 2.54s \\ \hline
+        \texttt{slashdot.org} & Proxy & No & 5.00s \\ \hline
+        \texttt{slashdot.org} & Proxy & Yes & 3.31s \\ \hline \hline
+        \texttt{reddit.com} & Browser & No & 2.24s \\ \hline
+        \texttt{reddit.com} & Browser & Yes & 1.34s \\ \hline
+        \texttt{reddit.com} & Proxy & No & 5.61s \\ \hline
+        \texttt{reddit.com} & Proxy & Yes & 3.36s \\ \hline
+    \end{tabular}
+    \caption{Response times for reddit and Slashdot.}
+    \label{tbl:websites}
+\end{table}
+
+\subsection{Large file}
+\label{sec:largefile}
+
+In this test we download the Ubuntu x86 desktop install image (693 MB).
+\autoref{tbl:largefile} shows the speed and time to download the file using a
+direct connection, using the proxy and using the proxy with the file in the
+local cache.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|l||r|r|}
+        \hline
+        \bf{Type} & \bf{Download speed} & \bf{Time} \\
+        \hline
+        \hline
+        Direct & 3.96 MB/s & 2:55.12 \\ \hline
+        Proxy & 2.69 MB/s & 4:17.77 \\ \hline
+        Proxy (cached) & 113 MB/s & 6.14 \\ \hline
+    \end{tabular}
+    \caption{Download speed and time for a 693 MB file.}
+    \label{tbl:largefile}
+\end{table}
+
+\subsection{Conclusion}
+\label{sec:testconclusions}
+
+The tests in \autoref{sec:websites} and \autoref{sec:largefile} show that we
+incur a speed penalty when using the proxy instead of a direct connection. The
+response time for the websites was higher, and the large file was downloaded
+at a slower average speed when using the proxy. However, when using the proxy,
+there is in all cases a performance gain when the requested resource is in the
+proxy's cache.
+
+The large file was---unsurprisingly---retrieved much faster when it was
+already in the proxy cache. Thus, for this proxy server there is only a
+speed advantage for the \emph{end user} when the requested resource is large
+and there is a significant disparity between the download speed from the
+resource's location and the download speed from the proxy's location.
+
+
+\section{Known limitations and bugs}
+\label{sec:bugs}
+
+In addition to the limitations outlined in the first report, the
+implementation has the following known limitations and bugs:
+
+\begin{itemize}
+    \item The only supported request methods are GET and HEAD.
+    \item There is no support for HTTPS.
+    \item The proxy server will \emph{always} override the \verb+Transfer-Encoding+ to \verb+identity+.
+    \item The cache on the disk is never cleaned up. Neither when shutting down, or when a resource on runtime is declared expired.
+    \item The cache is not persistent between server restarts.
+    \item Only a subset of the caching mechanisms outlined in RFC~2616 is supported (see \autoref{sec:cachestrategy}).
+    \item There is a performance loss when using the proxy (see \autoref{sec:experiments}).
+    \item The \verb+Vary+ header is not honered.
+\end{itemize}
+
+%\bibliographystyle{abbrv}
+%\bibliography{pcsd}  % pcsd.bib is the name of the Bibliography in this case
+% You must have a proper ".bib" file
+%  and remember to run:
+% latex bibtex latex latex
+%  or
+% pdflatex bibtexx pdflatex pdflatex
+% to resolve all references
+
+%APPENDICES are optional
+%\balancecolumns
+%\appendix
+%Appendix A
+%\section{Headings in Appendices}
+
+\end{document}
