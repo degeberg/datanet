@@ -23,7 +23,7 @@ class Worker(threading.Thread):
                 buf += client.recv(bufsize)
 
             client.settimeout(1.0)
-            response = httplib.Response(self.server.config, client, self.server.cache)
+            response = httplib.Response(self.server.config, client, self.server.cache, self.server.proxynet)
 
             try:
                 try:
@@ -34,9 +34,9 @@ class Worker(threading.Thread):
                     response.handle_request(req)
                 except httplib.HTTPError as e:
                     response.serve_error(e.get_code())
-                except Exception as e:
-                    sys.stderr.write(str(e))
-                    response.serve_error(500)
+#                except Exception as e:
+#                    sys.stderr.write(str(e))
+#                    response.serve_error(500)
             except socket.error:
                 pass # don't crash if client closes connection prematurely
             finally:

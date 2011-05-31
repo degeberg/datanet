@@ -98,6 +98,7 @@ def parse_config(path, args):
     if args.address != None:
         config['server']['bind'] = args.address
 
+    config['server']['tracker'] = 'datanet2011tracker.appspot.com'
     config['server']['webroot'] = os.path.abspath(config['server']['webroot'])
     config['resources']['templates'] = os.path.abspath(config['resources']['templates'])
     config['resources']['cache'] = os.path.abspath(config['resources']['cache'])
