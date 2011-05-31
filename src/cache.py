@@ -15,6 +15,7 @@ class Manager:
         }
 
     def is_cached(self, id):
+        return False # disable the cache for assignment 3 and 4
         return id in self.resources and (self.resources[id]['expires'] == None or self.resources[id]['expires'] > time.gmtime())
 
     def get_attr(self, id, attr):
