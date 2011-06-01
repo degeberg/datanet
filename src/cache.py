@@ -51,7 +51,7 @@ def get_resource_id(uri):
     return hashlib.md5(uri.encode('ascii')).hexdigest()
 
 def can_be_cached(response):
-    return False
+    return False, None
     if response.status != 200:
         return False, None
 
