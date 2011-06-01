@@ -22,7 +22,7 @@ class ProxyManager(threading.Thread):
         if domain[-1] != '.':
             domain += '.'
 
-        return any(domain.endswith(a) for a in self.data['whitelist'])
+        return any(domain.endswith(a) and (len(a) == len(domain) or domain[-len(a)-1] == '.') for a in self.data['whitelist'])
 
     def run(self):
         while True:
