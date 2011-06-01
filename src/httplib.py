@@ -138,7 +138,7 @@ def check_whitelist(netloc, whitelist):
     if domain[-1] != '.':
         domain += '.'
 
-    return any(domain[domain.rfind(a):] == a for a in whitelist)
+    return any(domain.endswith(a) for a in whitelist)
 
 class Response:
     def __init__(self, config, client, cache, proxynet=None):
