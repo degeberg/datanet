@@ -2,16 +2,15 @@ import socket
 import threading
 import queue
 import sys
-import http.client
-import json
 
 from worker import Worker
+from proxynet import ProxyManager
 
 import cache
 
 class Server:
     def __init__(self, config):
-        self.proxynet = None
+        self.proxymanager = None
         self.config = config
 
         self.workers = []
@@ -30,12 +29,9 @@ class Server:
 
     def serve(self):
         if self.config['server']['tracker'] != None:
-            tracker = http.client.HTTPConnection(self.config['server']['tracker'])
-            tracker.request('POST', '/peers.json', 'port={0}&action=register'.format(self.config['server']['port']), {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            })
-            response = tracker.getresponse().read().decode('utf8')
-            self.proxynet = json.loads(response)
+            self.proxymanager = ProxyManager(self.config['server']['tracker'], self.config['server']['port'])
+            self.proxymanager.daemon = True
+            self.proxymanager.start()
 
         for i in range(int(self.config['server']['workers'])):
             w = Worker(self)

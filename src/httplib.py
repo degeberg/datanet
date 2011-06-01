@@ -133,19 +133,12 @@ def register_method_handler(method):
         return f
     return decorator
 
-def check_whitelist(netloc, whitelist):
-    domain = re.sub(':\d+$', '', netloc)
-    if domain[-1] != '.':
-        domain += '.'
-
-    return any(domain.endswith(a) for a in whitelist)
-
 class Response:
-    def __init__(self, config, client, cache, proxynet=None):
+    def __init__(self, config, client, cache, proxymanager=None):
         self.config = config
         self.client = client
         self.cache = cache
-        self.proxynet = proxynet
+        self.proxymanager = proxymanager
         self.tpl = template.TemplateManager(config['resources']['templates'])
 
     def create_response_header(self, code, headers):
@@ -196,10 +189,10 @@ class Response:
         headers = self.req['headers']
 
         use_proxy_peer = False
-        if self.proxynet == None:
+        if self.proxymanager == None:
             conn = http.client.HTTPConnection(uridata.netloc)
         else:
-            if not check_whitelist(uridata.netloc, self.proxynet['whitelist']):
+            if not self.proxymanager.check_whitelist(uridata.netloc):
                 self.serve_error(403)
                 return
 
@@ -209,9 +202,7 @@ class Response:
             headers['Super-Via'] = ''
 
             if int(headers['Max-Forwards']) > 1:
-                while True: # for now, only use super peers
-                    peer = random.choice(self.proxynet['peers'])
-                    if peer['super_peer']: break
+                peer = self.proxymanager.get_peer(True)
                 conn = http.client.HTTPConnection('{0}:{1}'.format(peer['ip'], peer['port']))
                 headers['Max-Forwards'] = str(int(headers['Max-Forwards']) - 1)
                 use_proxy_peer = True
