@@ -102,7 +102,7 @@ def parse_headers(headers):
         key, value = m.group(1, 2)
         if value == None:
             value = ''
-        r[key] = value
+        r[key] = value.strip()
 
     return r
 
@@ -229,6 +229,14 @@ class Response:
         except:
             pass
 
+        if 'Via' in headers and use_proxy_peer: # TODO: fix hard coded IP address
+            if headers['Via'] == '':
+                headers['Via'] = '1.1 109.74.202.182:{0}'.format(self.config['server']['port'])
+            else:
+                headers['Via'] = headers['Via'] + ', 1.1 109.74.202.182:{0}'.format(self.config['server']['port'])
+        if 'Via' in headers and not use_proxy_peer:
+            del headers['Via']
+
         if use_proxy_peer:
             conn.request(method, self.req['uri'], body, headers)
         else:
@@ -245,11 +253,6 @@ class Response:
             do_cache, cache_expires = cache.can_be_cached(res)
         else:
             do_cache = False
-
-        if 'Via' not in rheaders:
-            rheaders['Via'] = '1.1 DanielServer'
-        else:
-            rheaders['Via'] += ', 1.1 DanielServer'
 
         response_header = self.create_response_header(res.status, rheaders)
 
