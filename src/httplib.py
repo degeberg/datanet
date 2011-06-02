@@ -198,7 +198,7 @@ class Response:
                 self.serve_error(403)
                 return
 
-            if 'Max-Forwards' not in headers:
+            if 'Max-Forwards' not in headers or int(headers['Max-Forwards']) > 5:
                 headers['Max-Forwards'] = '5'
 
 #            headers['Super-Via'] = ''
