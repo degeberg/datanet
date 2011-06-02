@@ -18,6 +18,8 @@ import cache
 
 METHOD_HANDLERS = {}
 
+PROXY_TIMEOUT = 5
+
 CODES = {
     100: 'Continue',
     101: 'Switching Protocols',
@@ -199,15 +201,15 @@ class Response:
             if 'Max-Forwards' not in headers:
                 headers['Max-Forwards'] = '5'
 
-            headers['Super-Via'] = ''
+#            headers['Super-Via'] = ''
 
             if int(headers['Max-Forwards']) > 1:
-                peer = self.proxymanager.get_peer(True)
-                conn = http.client.HTTPConnection('{0}:{1}'.format(peer['ip'], peer['port']))
+                peer = self.proxymanager.get_peer()
+                conn = http.client.HTTPConnection('{0}:{1}'.format(peer['ip'], peer['port']), timeout=PROXY_TIMEOUT)
                 headers['Max-Forwards'] = str(int(headers['Max-Forwards']) - 1)
                 use_proxy_peer = True
             else:
-                conn = http.client.HTTPConnection(uridata.netloc)
+                conn = http.client.HTTPConnection(uridata.netloc, timeout=PROXY_TIMEOUT)
 
         cachedir = self.config['resources']['cache']
 
@@ -237,10 +239,14 @@ class Response:
         if 'Via' in headers and not use_proxy_peer:
             del headers['Via']
 
-        if use_proxy_peer:
-            conn.request(method, self.req['uri'], body, headers)
-        else:
-            conn.request(method, path, body, headers)
+        try:
+            if use_proxy_peer:
+                conn.request(method, self.req['uri'], body, headers)
+            else:
+                conn.request(method, path, body, headers)
+        except: # bad peer
+            self.proxymanager.remove_peer(peer['ip'])
+            raise ServerError(504)
 
         res = conn.getresponse()
 

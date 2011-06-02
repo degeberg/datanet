@@ -17,6 +17,10 @@ class ProxyManager(threading.Thread):
             if peer['super_peer'] or not super_only: break
         return peer
 
+    def remove_peer(self, ip):
+        self.data['peers'] = list(filter(lambda x: x['ip'] != ip, self.data['peers']))
+        print('Removing bad peer: {0} - {1} peers left'.format(ip, len(self.data['peers'])))
+
     def check_whitelist(self, netloc):
         domain = re.sub(':\d+$', '', netloc)
         if domain[-1] != '.':
