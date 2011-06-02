@@ -1,0 +1,201 @@
+% This is "sig-alternate.tex" V1.9 April 2009
+% This file should be compiled with V2.4 of "sig-alternate.cls" April 2009
+%
+% This has been modified for use in the Principles of Computer System Design @
+% DIKU, 2010/2011
+\documentclass{sig-alternate}
+%
+% This gets rid of the copyright box which is not needed for PCSD assignments
+%
+\makeatletter
+\def\@copyrightspace{}
+\makeatother
+%
+% For our purposes page numbers are not so bad
+%
+\pagenumbering{arabic}
+
+%
+% Useful packages
+%
+\usepackage{url}
+\usepackage[english]{babel}
+%\usepackage[british]{babel}
+\usepackage{hyperref}
+%\usepackage{graphicx} % uncomment if you are using graphics
+
+\usepackage{listings}
+\lstset{
+    keywordstyle=\bfseries\ttfamily\color[rgb]{0,0,1},
+    identifierstyle=\ttfamily,
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\ttfamily\color[rgb]{0.627,0.126,0.941},
+    showstringspaces=false,
+    basicstyle=\footnotesize,
+    numbersep=10pt,
+    tabsize=2,
+    breaklines=true,
+    prebreak = \raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+    breakatwhitespace=false,
+    aboveskip={1.5\baselineskip},
+    columns=fixed,
+    upquote=true,
+    extendedchars=true,
+    frame=single,
+    captionpos=b
+}
+
+\usepackage[margin=11pt,font=footnotesize,labelfont=bf]{caption}
+
+\begin{document}
+
+\title{Datanet: Assignment 3}
+\subtitle{Anonymizing Distributed Proxy}
+
+\numberofauthors{1} % This is individual work right???
+
+\author{
+\alignauthor
+    Daniel Egeberg\\
+    \email{egeberg@diku.dk}
+}
+
+\maketitle
+
+\begin{abstract}
+    Bla bla\ldots abstract.
+\end{abstract}
+
+\section{Implementation}
+\label{sec:implementation}
+
+The distributed proxy network is handled by introducing a new object called
+a \verb+ProxyManager+ found in the \verb+proxynet+ module. This object is
+responsible for storing data about the network as it is received by the
+network's tracker. The main server thread runs this object in a new thread.
+When the proxy manager thread starts, it registers with the tracker and
+receives the latest peer list and whitelist. It registers with the tracker and
+gets updated lists again after \verb+min_wait+ seconds have passed.
+
+An additional configuration flag has been added that contains the domain name
+of the tracker. The proxy network is \emph{only} used if this setting is
+non-empty on startup.
+
+The server's caching capabilities have been disabled by changing the
+\verb+cache+ module so it always reports resources as non-cachable and
+not cached. This was done to make sure that any problems with the caching
+mechanism would not manifest in the testing of the distributed network.
+
+
+\section{Security Measures}
+\label{sec:security}
+
+In order to restrict which requests the client can make, a whitelist has been
+implemented. The whitelist consists of a list of fully qualified domain names
+given by the peer tracker. Only request URIs that have a domain name in the
+whitelist, or whose domain name is a subdomain of a whitelisted domain is
+allowed. All other requests will result in a 403 response code.
+
+
+\section{Error Handling}
+\label{sec:errorhandling}
+
+Seeing as peers are only removed from the tracker list daily, you will often
+get a lot of peers that are no longer running or for some other reason are
+unresponsive. To deal with this problem, all proxy requests have a fixed
+timeout. If the request times out, the peer in question is regarded as a
+bad peer and removed from the local peer list. That peer will be taken into
+consideration again if it is still in the tracker once the server updates with
+the tracker. If the request times out, another peer will not be tried and a
+504 Gateway Timeout response is given to the client.
+
+One problem with this approach is that a peer may be removed even though
+the problem resides with another peer further ahead in the request chain.
+As an example, if our request gets routed through proxies A, B and C and
+proxy C happens to be a bad peer, we will be removing proxy A from the list
+because it from our point of view seems unresponsive, even though it only
+timed out because proxy B timed out, which in turn timed out because of proxy
+C. There is no easy way around this problem seeing as we have no knowledge
+nor control of what happens when we forward a request to another peer. The
+only way to make sure we only remove \emph{actual} bad peers is by using the
+\verb+Max-Forwards+ header to make sure that the next peer will be the final
+one. However, this goes against the purpose of the network.
+
+
+\section{Known Limitations}
+\label{sec:limitations}
+
+
+\section{Setup}
+\label{sec:setup}
+
+My proxy peer is running as a daemon on my VPS in Linode's London datacenter.
+The server is running Gentoo Linux and Python 3.2 compiled directly from the
+source tarball from upstream seeing as the latest version in Portage is 3.1,
+and the server uses things that were added to the standard library in 3.2.
+
+The server's firewall does not restrict port usage, but the proxy server only
+binds to a specific port on all network interfaces.
+
+
+\section{Experiments}
+\label{sec:experiments}
+
+In the time of writing, the network was too unreliable to conduct
+any meaningful experiments. A lot of the peers in the tracker were
+unresponsive or broken in ome way. The super peers were also unresponsive.
+\autoref{lst:working} shows how using the \verb+Max-Forwards+ header to make
+sure that my own peer is the last (and thus only) peer in the forward chain
+results in a correct response. \autoref{lst:unresponsive} shows how routing
+through multiple peers fails due to a timeout.
+
+\lstset{caption={Single forward proxy request.},label=lst:working}
+\begin{lstlisting}
+HEAD http://www.google.dk/ HTTP/1.1
+Host: www.google.dk
+Max-Forwards: 1
+
+HTTP/1.1 200 OK
+X-XSS-Protection: 1; mode=block
+Transfer-Encoding: identity
+Set-Cookie: NID=47=iKiNhh71bM4jhvwkxCSFBxiwZF0DmBWQRVrKly6hUPwBkLwAfZ6A4CthofJKtOV4ZD43xZlsIogZqt1dp84GYFl8Awg_Zp9d6gro-DPefs6z0BmV-u4eXp8BP804HGxr; expires=Fri, 02-Dec-2011 22:38:25 GMT; path=/; domain=.google.dk; HttpOnly
+Accept-Ranges: none
+Expires: -1
+Connection: close
+Cache-Control: private, max-age=0
+Date: Thu, 02 Jun 2011 22:38:41 GMT
+Content-Type: text/html; charset=ISO-8859-1
+\end{lstlisting}
+
+\lstset{caption={Routing through one peer fails.},label=lst:unresponsive}
+\begin{lstlisting}
+HEAD http://www.google.dk/ HTTP/1.1
+Host: www.google.dk
+Max-Forwards: 2
+
+HTTP/1.1 504 Gateway Timeout
+Content-Length: 205
+Accept-Ranges: none
+Server: DanielServer
+Connection: close
+Date: Thu, 02 Jun 2011 22:40:03 GMT
+Content-Type: text/html; charset=utf-8
+\end{lstlisting}
+
+
+%\bibliographystyle{abbrv}
+%\bibliography{pcsd}  % pcsd.bib is the name of the Bibliography in this case
+% You must have a proper ".bib" file
+%  and remember to run:
+% latex bibtex latex latex
+%  or
+% pdflatex bibtexx pdflatex pdflatex
+% to resolve all references
+
+%APPENDICES are optional
+%\balancecolumns
+%\appendix
+%Appendix A
+%\section{Headings in Appendices}
+
+\end{document}
