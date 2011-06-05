@@ -63,7 +63,15 @@
 \maketitle
 
 \begin{abstract}
-    Bla bla\ldots abstract.
+    This report outlines the design and implementation of an anonymizing
+    distributed proxy network. Code from an existing proxy server was modified
+    to interact with a network of peers to hide the requester's IP address
+    from the destination host.
+
+    Security measures and error handling is discussed, and three different
+    experiments have been conducted to test latency and bandwidth of the
+    network. Additionally, the overall design of the protocol is discussed
+    shortly.
 \end{abstract}
 
 \section{Implementation}
@@ -122,8 +130,28 @@ only way to make sure we only remove \emph{actual} bad peers is by using the
 one. However, this goes against the purpose of the network.
 
 
-\section{Known Limitations}
-\label{sec:limitations}
+\section{Protocol Problems}
+\label{sec:problems}
+
+There are a number of problems with the protocol. It requires a lot of
+functional and active peers at any one time in order to work reliably. In its
+current state, it consists mostly of a few unreliable or entirely unresponsive
+peers. If the request is routed through five different peers, it only takes
+one of them timing out. Currently, the tracker consists of a lot of peers of
+varying quality because people are still actively developing them. Also, a lot
+of the peers are actually offline because they were only registered to test.
+
+For real-world purposes, it would be necessary having a production \emph{and}
+testing/development tracker. Also, the expiry should probably be lowered to
+decrease the chance of listing peers that are no longer active. The tracker
+could also periodically check that the registered peers are still online
+instead of relying on a fixed expiry time.
+
+An easy way to disrupt the network would be to register a lot of invalid
+peers. This would in practice give a high probability of getting a valid peer
+selecting one of these. Depending on the strategy of the peer, this would
+either make the network much slower or make requests fail. Lowering the expiry
+time or making the tracker check for live registered peers.
 
 
 \section{Setup}
@@ -141,46 +169,99 @@ binds to a specific port on all network interfaces.
 \section{Experiments}
 \label{sec:experiments}
 
-In the time of writing, the network was too unreliable to conduct
-any meaningful experiments. A lot of the peers in the tracker were
-unresponsive or broken in ome way. The super peers were also unresponsive.
-\autoref{lst:working} shows how using the \verb+Max-Forwards+ header to make
-sure that my own peer is the last (and thus only) peer in the forward chain
-results in a correct response. \autoref{lst:unresponsive} shows how routing
-through multiple peers fails due to a timeout.
+To test the proxy network, I have conducted three different kinds of tests:
 
-\lstset{caption={Single forward proxy request.},label=lst:working}
-\begin{lstlisting}
-HEAD http://www.google.dk/ HTTP/1.1
-Host: www.google.dk
-Max-Forwards: 1
+\begin{enumerate}
+    \item Using it through a browser.
+    \item Benchmarking using Apache Bench.
+    \item Downloading a large file.
+\end{enumerate}
 
-HTTP/1.1 200 OK
-X-XSS-Protection: 1; mode=block
-Transfer-Encoding: identity
-Set-Cookie: NID=47=iKiNhh71bM4jhvwkxCSFBxiwZF0DmBWQRVrKly6hUPwBkLwAfZ6A4CthofJKtOV4ZD43xZlsIogZqt1dp84GYFl8Awg_Zp9d6gro-DPefs6z0BmV-u4eXp8BP804HGxr; expires=Fri, 02-Dec-2011 22:38:25 GMT; path=/; domain=.google.dk; HttpOnly
-Accept-Ranges: none
-Expires: -1
-Connection: close
-Cache-Control: private, max-age=0
-Date: Thu, 02 Jun 2011 22:38:41 GMT
-Content-Type: text/html; charset=ISO-8859-1
-\end{lstlisting}
+\subsection{Browser usage}
+\label{sec:browser}
 
-\lstset{caption={Routing through one peer fails.},label=lst:unresponsive}
-\begin{lstlisting}
-HEAD http://www.google.dk/ HTTP/1.1
-Host: www.google.dk
-Max-Forwards: 2
+Testing the proxy network through a browser was done by using the ``Network''
+tab in Chromium's developer tool, to get the total download time for the
+webpage and all the resources. The results in \autoref{tbl:browser} shows
+download times for requests made to \url{http://diku.dk/}.
 
-HTTP/1.1 504 Gateway Timeout
-Content-Length: 205
-Accept-Ranges: none
-Server: DanielServer
-Connection: close
-Date: Thu, 02 Jun 2011 22:40:03 GMT
-Content-Type: text/html; charset=utf-8
-\end{lstlisting}
+\begin{table}[h]
+\centering
+\begin{tabular}{|l||r|}
+\hline
+\bf{With proxy?} & \bf{Average download time:} \\
+\hline\hline
+No & 0.34s \\ \hline
+Yes & 44.89s \\
+\hline
+\end{tabular}
+\caption{Browser test results.}
+\label{tbl:browser}
+\end{table}
+
+
+\subsection{Apache Bench}
+\label{sec:ab}
+
+Apache Bench was used to test making concurrent requests through the network.
+I made 100 requests to \url{http://diku.dk/} with a concurrency level of 10.
+The total time was 62496~ms with a median time of 900~ms and a maximum time of
+40928~ms. The response time was pretty unstable with a standard deviation of
+8963~ms.
+
+I was unable to get Apache Bench working with my own peer, so the
+initial request through the network was made to the super peer at
+\texttt{46.137.49.145}.
+
+Using the same settings, but without using the proxy network, the total
+response time was 472~ms, the median was 43~ms, the maximum was 113~ms and the
+standard deviation was 17~ms.
+
+
+\subsection{Download of large files}
+\label{sec:debian}
+
+To test bandwidth, a Debian
+image\footnote{\url{http://ftp.dk.debian.org/debian-cd/current/i386/iso-cd/debian-6.0.1a-i386-businesscard.iso}}
+was downloaded four times both directly and through the proxy.
+\autoref{tbl:debian} shows the results of this experiment.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l||r|}
+\hline
+\bf{With proxy?} & \bf{Average download speed:} \\
+\hline\hline
+No & 6.27 MB/s \\ \hline
+Yes & 848 kB/s \\
+\hline
+\end{tabular}
+\caption{Download times for the Debian image.}
+\label{tbl:debian}
+\end{table}
+
+
+\subsection{Conclusion}
+\label{sec:expconclusion}
+
+The tests in subsections \ref{sec:browser} and \ref{sec:ab} show that making
+requests through the proxy network causes a significant increase in latency.
+The Apache Bench experiment (\autoref{sec:ab}) also shows that the network is
+unstable and response times may vary greatly. The test in \autoref{sec:debian}
+also shows that the bandwidth is lower when using the network.
+
+Overall, there are significant performance penalties when using the proxy
+network.
+
+
+\section{Known problems}
+
+This assignment's code was based on the code from the previous assignments,
+so it has the same limitations as outlined in previous reports. The proxy
+functionality in my implementation seems somewhat unstable, but I'm not
+entirely sure if it is the network in general or a local problem. I haven't
+had time to implement it using the code from the suggested solutions, but I
+will most likely use that as a basis for the next assignment.
 
 
 %\bibliographystyle{abbrv}
