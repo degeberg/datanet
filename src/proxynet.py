@@ -5,6 +5,9 @@ import random
 import time
 import re
 
+class EmptyPeerList(Exception):
+    pass
+
 class ProxyManager(threading.Thread):
     def __init__(self, tracker, server_port):
         self.tracker = tracker
@@ -12,12 +15,21 @@ class ProxyManager(threading.Thread):
         threading.Thread.__init__(self)
 
     def get_peer(self, super_only=False):
+        peers = self.get_super_peers() if super_only else self.data['peers']
+
+        if len(peers) == 0:
+            raise EmptyPeerList()
+
         while True:
-            peer = random.choice(self.data['peers'])
+            peer = random.choice(peers)
             if peer['super_peer'] or not super_only: break
         return peer
 
+    def get_super_peers(self):
+        return [x for x in self.data['peers'] if x['super_peer']]
+
     def remove_peer(self, ip):
+        return
         self.data['peers'] = list(filter(lambda x: x['ip'] != ip, self.data['peers']))
         print('Removing bad peer: {0} - {1} peers left'.format(ip, len(self.data['peers'])))
 

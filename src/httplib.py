@@ -15,10 +15,11 @@ import random
 
 import template
 import cache
+import proxynet
 
 METHOD_HANDLERS = {}
 
-PROXY_TIMEOUT = 5
+PROXY_TIMEOUT = 20
 
 CODES = {
     100: 'Continue',
@@ -201,10 +202,13 @@ class Response:
             if 'Max-Forwards' not in headers or int(headers['Max-Forwards']) > 5:
                 headers['Max-Forwards'] = '5'
 
-#            headers['Super-Via'] = ''
+            headers['Super-Via'] = ''
 
             if int(headers['Max-Forwards']) > 1:
-                peer = self.proxymanager.get_peer()
+                try:
+                    peer = self.proxymanager.get_peer(True)
+                except proxynet.EmptyPeerList:
+                    raise ServerError(502)
                 conn = http.client.HTTPConnection('{0}:{1}'.format(peer['ip'], peer['port']), timeout=PROXY_TIMEOUT)
                 headers['Max-Forwards'] = str(int(headers['Max-Forwards']) - 1)
                 use_proxy_peer = True
