@@ -9,12 +9,18 @@ import SocketServer
 import httplib
 import urlparse
 import socket
+import sys
+
+from Crypto.PublicKey import RSA
 
 import proxynet
 
 multithreaded  = True
-server_address = ('', 8000)
-via_header     = '1.1 DatanetProxy'
+if len(sys.argv) == 2:
+    server_address = ('', int(sys.argv[1]))
+else:
+    server_address = ('', 8000)
+via_header     = '1.1 DanielProxy'
 proxy_timeout  = 30
 
 # RFC2616 hop-by-hop headers
