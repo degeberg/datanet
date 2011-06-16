@@ -41,12 +41,14 @@ class ProxyManager(threading.Thread):
     def run(self):
         while True:
             self.__register()
+            print 'Tracker list updated'
             time.sleep(self.data['options']['min_wait'])
 
     def __register(self):
         conn = httplib.HTTPConnection(self.tracker)
-        conn.request('POST', '/peers.json', 'port={0}&action=register'.format(self.server_port), {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        })
+#        conn.request('POST', '/peers.json', 'port={0}&action=register'.format(self.server_port), {
+#            'Content-Type': 'application/x-www-form-urlencoded'
+#        })
+        conn.request('GET', '/peers.json')
         response = conn.getresponse().read()
         self.data = json.loads(response)

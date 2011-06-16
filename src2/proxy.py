@@ -15,6 +15,7 @@ import proxynet
 multithreaded  = True
 server_address = ('', 8000)
 via_header     = '1.1 DatanetProxy'
+proxy_timeout  = 30
 
 # RFC2616 hop-by-hop headers
 hop_by_hop_headers = [
@@ -31,6 +32,9 @@ hop_by_hop_headers = [
 hop_by_hop_headers += [
         'proxy-connection' # Firefox
         ]
+
+proxymanager = proxynet.ProxyManager('datanet2011tracker.appspot.com', server_address[1])
+proxymanager.daemon = True
 
 class MultiThreadedHTTPServer(
         SocketServer.ThreadingMixIn, 
@@ -113,13 +117,6 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
         if not self.path.startswith('http'):
             return self.send_error(403, 'scheme not supported')
 
-        u = urlparse.urlparse(self.path)
-        if u.scheme == 'http':
-            c = httplib.HTTPConnection(u.netloc, timeout=10)
-        else:
-            return self.send_error(403, 'scheme not supported')
-        url = urlparse.urlunparse(('', '') + u[2:])
-
         connection = None
         request_header_exceptions = dict(header_exceptions)
         def connection_exception(h, k, v):
@@ -128,10 +125,36 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
             return True
         request_header_exceptions['connection'] = connection_exception
         headers = fix_headers(self.headers.items(), request_header_exceptions)
+
+        if 'max-forwards' not in headers:
+            headers.addheader('Max-Forwards', '5')
+
+        u = urlparse.urlparse(self.path)
+        if u.scheme == 'http':
+            if headers['max-forwards'] == '1':
+                c = httplib.HTTPConnection(u.netloc, timeout=10)
+                url = urlparse.urlunparse(('', '') + u[2:])
+            else:
+                try:
+                    peer = proxymanager.get_peer(True)
+                except proxynet.EmptyPeerList:
+                    return self.send_error(502)
+                #print peer
+                c = httplib.HTTPConnection('{0}:{1}'.format(peer['ip'], peer['port']), timeout=proxy_timeout)
+                url = self.path
+                headers.setheader('max-forwards', int(headers['max-forwards']) - 1)
+
+                if 'via' in headers: # TODO: fix hard coded IP address
+                    if headers['via'] == '':
+                        headers.setheader('via', '1.1 109.74.202.182:{0}'.format(server_address[1]))
+                    else:
+                        headers.setheader('via', headers['Via'] + ', 1.1 109.74.202.182:{0}'.format(server_address[1]))
+        else:
+            return self.send_error(403, 'scheme not supported')
+
         if connection:
             for f in [f.strip() for f in connection.split(',')]:
                 if f in headers: del headers[f]
-        headers.addheader('Via', via_header)
         headers.addheader('Connection', 'close')
 
         try:
@@ -163,7 +186,6 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
         if connection:
             for f in [f.strip() for f in connection.split(',')]:
                 if f in headers: del headers[f]
-        headers.addheader('Via', via_header)
         headers.addheader('Connection', 'close')
         self.send_response(r.status, r.reason)
         for h, v in headers.items():
@@ -181,7 +203,7 @@ if __name__ == '__main__':
         httpproxyd = MultiThreadedHTTPServer(server_address, ProxyServer)
     else:
         httpproxyd = BaseHTTPServer.HTTPServer(server_address, ProxyServer)
-    httpproxyd.proxymanager = proxynet.ProxyManager('datanet2011tracker.appspot.com', server_address[1])
-    httpproxyd.proxymanager.daemon = True
-    httpproxyd.proxymanager.start()
+
+    proxymanager.start()
+
     httpproxyd.serve_forever()
