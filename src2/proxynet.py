@@ -51,7 +51,10 @@ class ProxyManager(threading.Thread):
 
     def run(self):
         while True:
-            self.__register()
+            try:
+                self.__register(self.data['options']['nonce'])
+            except:
+                self.__register()
             time.sleep(self.data['options']['min_wait'])
 
     def __register(self, nonce=''):
