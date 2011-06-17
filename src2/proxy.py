@@ -10,6 +10,7 @@ import httplib
 import urlparse
 import socket
 import sys
+import os
 
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
@@ -128,30 +129,30 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_DATANET(self):
         sesskey = privkey.decrypt(self.headers['Session-Key'])
         a = AES.new(sesskey[0:32], AES.MODE_CBC, sesskey[32:48])
-        payload = a.decrypt(self.rfile(read))
+        payload = a.decrypt(self.rfile.read())
         request = utils.parse_request(payload)
 
         self.headers = request['headers']
         return self.proxy(request['method'], aes=a)
     def create_encrypted_response(self, headers, code, reason, body, aes):
         response = 'HTTP/1.1 {0} {1}'.format(code, reason)
-        response += '\r\n' + headers + '\r\n\r\n' + body
+        response += '\r\n' + str(headers) + '\r\n\r\n' + body
 
-        payload = aes.encrypt(response)
+        payload = aes.encrypt(utils.pkcs7_pad(response))
         
         return payload
-    def create_payload(self, headers, code, reason, body, pubkey): # TODO: broken
+    def create_payload(self, headers, method, uri, body, pubkey):
         rng = Random.new()
         key = rng.read(32)
         iv = rng.read(16)
 
-        a = AES.new(key, AES.MODE_CBD, iv)
-        response = 'HTTP/1.1 {0} {1}'.format(code, reason)
-        response += '\r\n' + headers + '\r\n\r\n' + body
+        a = AES.new(key, AES.MODE_CBC, iv)
+        request = '{0} {1} HTTP/1.1'.format(method, uri)
+        request += '\r\n' + str(headers) + '\r\n\r\n' + body
 
-        payload = a.encrypt(response)
+        payload = a.encrypt(utils.pkcs7_pad(request))
         
-        return payload
+        return payload, pubkey.encrypt(key + iv, os.urandom(256)), a
     def proxy(self, method, aes=None):
         if not self.path.startswith('http'):
             return self.send_error(403, 'scheme not supported')
@@ -170,7 +171,7 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
 
         u = urlparse.urlparse(self.path)
         if u.scheme == 'http':
-            if headers['max-forwards'] == '1':
+            if headers['max-forwards'] == '0':
                 c = httplib.HTTPConnection(u.netloc, timeout=10)
                 url = urlparse.urlunparse(('', '') + u[2:])
                 peer = None
@@ -197,18 +198,30 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
                 if f in headers: del headers[f]
         headers.addheader('Connection', 'close')
 
+        c.set_debuglevel(1)
+
         try:
-            c.putrequest(method, url, True, True)
-            for h in headers.items():
-                c.putheader(*h)
-            c.endheaders()
-            content_length = int(self.headers.get('Content-Length', 0))
-            while content_length > 0:
-                data = self.rfile.read(min(content_length, 4096))
-                if len(data) == 0:
-                    return self.send_error(400)
-                c.send(data)
-                content_length -= len(data)
+            if peer != None and 'pub_key' in peer:
+                pubkey = RSA.construct((long(peer['pub_key']['n']), long(peer['pub_key']['e'])))
+                payload, key, a = self.create_payload(headers, method, url, self.rfile.read(), pubkey)
+                c.putrequest('DATANET', '*', True, True)
+                c.putheader('Host', '*')
+                c.putheader('Session-Key', key[0].encode('base64'))
+                c.putheader('Content-Length', len(payload))
+                c.endheaders()
+                c.send(payload)
+            else:
+                c.putrequest(method, url, True, True)
+                for h in headers.items():
+                    c.putheader(*h)
+                c.endheaders()
+                content_length = int(self.headers.get('Content-Length', 0))
+                while content_length > 0:
+                    data = self.rfile.read(min(content_length, 4096))
+                    if len(data) == 0:
+                        return self.send_error(400)
+                    c.send(data)
+                    content_length -= len(data)
         except socket.gaierror:
             return self.send_error(404, 'name resolution error')
         except socket.timeout:
@@ -219,32 +232,47 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
             return self.send_error(502, 'Bad Gateway: Bad status line')
 
         r = c.getresponse()
+
         connection = None
         response_header_exceptions = dict(header_exceptions)
         response_header_exceptions['connection'] = connection_exception
-        headers = fix_headers(r.getheaders(), response_header_exceptions)
+
+        if r.status == 700:
+            resp = utils.parse_request(a.decrypt(r.read()))
+            headers = fix_headers(resp['headers'], response_header_exceptions)
+            status = resp['status']
+            reason = resp['reason']
+            body = resp['body']
+        else:
+            status = r.status
+            reason = r.reason
+            headers = fix_headers(r.getheaders(), response_header_exceptions)
+
         if connection:
             for f in [f.strip() for f in connection.split(',')]:
                 if f in headers: del headers[f]
         headers.addheader('Connection', 'close')
 
         if aes != None:
-            payload = self.create_payload(headers, r.status, r.reason, r.read(), aes)
+            payload = self.create_encrypted_response(headers, r.status, r.reason, r.read(), aes)
             
             self.send_response(700, 'Encrypted')
             self.send_header('Cache-Control', 'no-cache', really_send=True)
             self.send_header('Content-Length', len(payload), really_send=True)
             self.wfile.write(payload)
         else:
-            self.send_response(r.status, r.reason)
+            self.send_response(status, reason)
             for h, v in headers.items():
                 self.send_header(h, v, really_send=True)
             self.end_headers()
 
-            data = r.read(4096)
-            while data:
-                self.wfile.write(data)
+            if r.status == 700:
+                self.wfile.write(body)
+            else:
                 data = r.read(4096)
+                while data:
+                    self.wfile.write(data)
+                    data = r.read(4096)
         c.close()
 
 if __name__ == '__main__':

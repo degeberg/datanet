@@ -19,9 +19,8 @@ class ProxyManager(threading.Thread):
         self.tracker = tracker
         self.server_port = server_port
 
-        c = httplib.HTTPConnection(tracker)
-        c.request('GET', '/tracker_pub.pem')
-        self.tracker_pub = RSA.importKey(c.getresponse().read())
+        with open('tracker_pub.pem', 'r') as f:
+            self.tracker_pub = RSA.importKey(f.read())
 
         threading.Thread.__init__(self)
 
@@ -91,4 +90,3 @@ class ProxyManager(threading.Thread):
             print 'Could not verify with tracker'
         else:
             print 'Tracker list updated'
-            print response

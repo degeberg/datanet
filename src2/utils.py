@@ -27,6 +27,8 @@ def parse_request(req):
         'body': '\n'.join(lines)
     }
 
-def pkcs7_pad(data):
-    r = len(data)  % 16
-    return chr(r) * r + data
+def pkcs7_pad(data, block_size=16):
+    r = len(data) % block_size
+    if r == 0: return data
+    r = block_size - r
+    return data + chr(r) * r
