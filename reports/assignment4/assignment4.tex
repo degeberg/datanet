@@ -1,0 +1,183 @@
+% This is "sig-alternate.tex" V1.9 April 2009
+% This file should be compiled with V2.4 of "sig-alternate.cls" April 2009
+%
+% This has been modified for use in the Principles of Computer System Design @
+% DIKU, 2010/2011
+\documentclass{sig-alternate}
+%
+% This gets rid of the copyright box which is not needed for PCSD assignments
+%
+\makeatletter
+\def\@copyrightspace{}
+\makeatother
+%
+% For our purposes page numbers are not so bad
+%
+\pagenumbering{arabic}
+
+%
+% Useful packages
+%
+\usepackage{url}
+\usepackage[english]{babel}
+%\usepackage[british]{babel}
+\usepackage{hyperref}
+%\usepackage{graphicx} % uncomment if you are using graphics
+
+\usepackage{listings}
+\lstset{
+    keywordstyle=\bfseries\ttfamily\color[rgb]{0,0,1},
+    identifierstyle=\ttfamily,
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\ttfamily\color[rgb]{0.627,0.126,0.941},
+    showstringspaces=false,
+    basicstyle=\footnotesize,
+    numbersep=10pt,
+    tabsize=2,
+    breaklines=true,
+    prebreak = \raisebox{0ex}[0ex][0ex]{\ensuremath{\hookleftarrow}},
+    breakatwhitespace=false,
+    aboveskip={1.5\baselineskip},
+    columns=fixed,
+    upquote=true,
+    extendedchars=true,
+    frame=single,
+    captionpos=b
+}
+
+\usepackage[margin=11pt,font=footnotesize,labelfont=bf]{caption}
+
+\begin{document}
+
+\title{Datanet: Assignment 4}
+\subtitle{Protecting the proxy network}
+
+\numberofauthors{1} % This is individual work right???
+
+\author{
+\alignauthor
+    Daniel Egeberg\\
+    \email{egeberg@diku.dk}
+}
+
+\maketitle
+
+\begin{abstract}
+    This report outlines the extension of an existing distributed and
+    anonymizing proxy network with peer-to-peer encryption. First the
+    implementation is outlined followed by a brief discussion of the threat
+    scenarios and how these are handled. Finally, the performance implications
+    of this is discussed, although experiments were unable to be conducted due
+    to problems with the network.
+\end{abstract}
+
+\section{Implementation}
+
+The encryption was implemented on top of the sample solution for assignment 2.
+This didn't include code for interacting with the peer network, so I ported my
+own \verb+proxynet+ module from assignment 3.
+
+A \verb+generate_keys.py+ script is now included to generate a private RSA key
+stored in \verb+id_rsa+. This key is used for communication with the tracker
+and other encryption-enabled peers.
+
+When registering with the tracker, the corresponding public key is sent
+along with a content signature based on the body and a nonce. The tracker
+registration is now comprised of multiple steps. Initially, the nonce is empty
+and a nonce is returned by the tracker. Then another registration attempt is
+made where the nonce is used in the content signature. This proves to the
+tracker that the peer is indeed in possession of the correct private key, and
+so it is verified and added to the peer list along with its public key.
+
+When communicating with other peers, the proprietary \verb+DATANET+ request
+method is used, along with a new response status called 700 Encrypted. The
+DATANET envelope contains the actual request encrypted with AES-256. The
+session key is RSA encrypted with the next peer's public key retrieved from
+the tracker. The other peer then responds with an encrypted response with the
+same AES session.
+
+To implement this, I used the PyCrypto library. I also used a few utility
+functions from tlslite to compute Base64 encodings of integers.
+
+A peer is currently running on \verb+degeberg.com+ on port 8000.
+
+
+\section{Threats}
+
+One problem this addresses is that people outside the network cannot see the
+data exchange. Only the end points are unencrypted. Another issue is data
+integrity. Even though a request may be routed through many places to the
+destination, only the few select peers will have access to the plaintext
+request and response.
+
+
+\section{Security improvements}
+
+The above threats are remedied because of the encryption. Seeing as we use
+asymmetric encryption, we ensure that only the intended recipient is able to
+decrypt the payload.
+
+The tracker also ensures that peers can only register with public keys where
+they own the corresponding private key using the multi-step registration
+outlined in section~1.
+
+
+%\section{Security flaws}
+
+\section{Anonymity}
+
+Anonymity is somewhat improved by each peer in the forward chain only knowing
+the IP address of the previous and next peer. The destination has no knowledge
+of who the originating request came from. The encryption between the peers
+ensures that people from the outside of the network cannot ``look into'' the
+network to see what is going on. However, it only requires one compromised
+peer to compromise that aspect of the anonymity. Of course the larger the
+network, the lower the probability of getting selected as a peer.
+
+The data sent through the network is not secured, however. In fact, the
+security of that information is decreased because it is exposed to more
+people. To fix this issue, the origin would have to encrypt the payload using
+the destination's public key so the intermediate peers are unable to eavesdrop
+on the communication exchange.
+
+
+\section{Performance}
+
+I was unable to conduct the performance experiments because I couldn't get
+encrypted connections working with the super peers. I decided to entirely
+ignore peers that weren't registered as super peers because past experiences
+from assignment 3 showed that they were exceedingly unreliable.
+
+When contacting the super peer with an encrypted payload using the DATANET
+envelope scheme, I was unable to get no response, while I got the expected
+response with an unencrypted request. Other students experienced the same
+issues, and because I would expect an error message from the peer instead of
+\emph{no} response, I concluded that the super peers were not working properly
+at the time I tried testing. I used the \verb+Max-Forwards+ header to make
+sure that the super peer in question would be the \emph{only} peer after my
+own.
+
+However, the system would have problem with large files because the encryption
+scheme between peers doesn't support streaming. Downloading a 100~MB file
+would require downloading the entire file before encrypting it and then
+sending the entire encrypted payload to the previous peer. This would be
+repeated between each pair of peers. This is obviously a problem as it
+produces a significant increase in latency, and you would risk peers timing
+out.
+
+%\bibliographystyle{abbrv}
+%\bibliography{pcsd}  % pcsd.bib is the name of the Bibliography in this case
+% You must have a proper ".bib" file
+%  and remember to run:
+% latex bibtex latex latex
+%  or
+% pdflatex bibtexx pdflatex pdflatex
+% to resolve all references
+
+%APPENDICES are optional
+%\balancecolumns
+%\appendix
+%Appendix A
+%\section{Headings in Appendices}
+
+\end{document}
