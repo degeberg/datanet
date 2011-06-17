@@ -91,3 +91,4 @@ class ProxyManager(threading.Thread):
             print 'Could not verify with tracker'
         else:
             print 'Tracker list updated'
+            print response

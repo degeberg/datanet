@@ -11,9 +11,12 @@ import urlparse
 import socket
 import sys
 
+from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
+from Crypto import Random
 
 import proxynet
+import utils
 
 multithreaded  = True
 if len(sys.argv) == 2:
@@ -41,6 +44,9 @@ hop_by_hop_headers += [
 
 proxymanager = proxynet.ProxyManager('datanet2011tracker.appspot.com', server_address[1])
 proxymanager.daemon = True
+
+with open('id_rsa', 'r') as f:
+    privkey = RSA.importKey(f.read())
 
 class MultiThreadedHTTPServer(
         SocketServer.ThreadingMixIn, 
@@ -88,7 +94,7 @@ class Headers(object):
     def items(self):
         return [(k.title(), v) for k, v in self.headers.items()]
     def __str__(self):
-        return '\n'.join(['%s: %s' % (k, v) for k, v in self.items()])
+        return '\r\n'.join(['%s: %s' % (k, v) for k, v in self.items()])
            
 header_exceptions = dict(zip(hop_by_hop_headers,
         [lambda a, b, c: True] * len(hop_by_hop_headers)))
@@ -119,7 +125,34 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
         self.proxy('HEAD')
     def do_GET(self):
         self.proxy('GET')
-    def proxy(self, method):
+    def do_DATANET(self):
+        sesskey = privkey.decrypt(self.headers['Session-Key'])
+        a = AES.new(sesskey[0:32], AES.MODE_CBC, sesskey[32:48])
+        payload = a.decrypt(self.rfile(read))
+        request = utils.parse_request(payload)
+
+        self.headers = request['headers']
+        return self.proxy(request['method'], aes=a)
+    def create_encrypted_response(self, headers, code, reason, body, aes):
+        response = 'HTTP/1.1 {0} {1}'.format(code, reason)
+        response += '\r\n' + headers + '\r\n\r\n' + body
+
+        payload = aes.encrypt(response)
+        
+        return payload
+    def create_payload(self, headers, code, reason, body, pubkey): # TODO: broken
+        rng = Random.new()
+        key = rng.read(32)
+        iv = rng.read(16)
+
+        a = AES.new(key, AES.MODE_CBD, iv)
+        response = 'HTTP/1.1 {0} {1}'.format(code, reason)
+        response += '\r\n' + headers + '\r\n\r\n' + body
+
+        payload = a.encrypt(response)
+        
+        return payload
+    def proxy(self, method, aes=None):
         if not self.path.startswith('http'):
             return self.send_error(403, 'scheme not supported')
 
@@ -140,6 +173,7 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
             if headers['max-forwards'] == '1':
                 c = httplib.HTTPConnection(u.netloc, timeout=10)
                 url = urlparse.urlunparse(('', '') + u[2:])
+                peer = None
             else:
                 try:
                     peer = proxymanager.get_peer(True)
@@ -193,15 +227,24 @@ class ProxyServer(BaseHTTPServer.BaseHTTPRequestHandler):
             for f in [f.strip() for f in connection.split(',')]:
                 if f in headers: del headers[f]
         headers.addheader('Connection', 'close')
-        self.send_response(r.status, r.reason)
-        for h, v in headers.items():
-            self.send_header(h, v, really_send=True)
-        self.end_headers()
 
-        data = r.read(4096)
-        while data:
-            self.wfile.write(data)
+        if aes != None:
+            payload = self.create_payload(headers, r.status, r.reason, r.read(), aes)
+            
+            self.send_response(700, 'Encrypted')
+            self.send_header('Cache-Control', 'no-cache', really_send=True)
+            self.send_header('Content-Length', len(payload), really_send=True)
+            self.wfile.write(payload)
+        else:
+            self.send_response(r.status, r.reason)
+            for h, v in headers.items():
+                self.send_header(h, v, really_send=True)
+            self.end_headers()
+
             data = r.read(4096)
+            while data:
+                self.wfile.write(data)
+                data = r.read(4096)
         c.close()
 
 if __name__ == '__main__':
